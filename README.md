@@ -1,7 +1,7 @@
 # Part-Guided-HyperDiffusion
-[![arXiv](https://img.shields.io/badge/arXiv-2303.17015-b31b1b.svg)](https://arxiv.org/abs/2303.17015)
 
-Official code repository of "HyperDiffusion: Generating Implicit Neural Fields with Weight-Space Diffusion" @ ICCV 2023
+This is an implementation repository based on the paper HyperDiffusion.
+The following information are the same you can find on the official Gitrepo of the paper. Stay tuned for more specifical information about our implementation.
 
 [Paper](https://arxiv.org/abs/2303.17015) | [Project website](https://www.ziyaerkoc.com/hyperdiffusion) |  [Video](https://www.youtube.com/watch?v=wjFpsKdo-II) | [Data](https://drive.google.com/drive/folders/1CuNVa92jcKlGBiHEuCQK2-juAB6Q6QPx?usp=sharing)
 
