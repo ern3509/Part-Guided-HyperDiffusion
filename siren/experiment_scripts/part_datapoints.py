@@ -30,7 +30,7 @@ def compute_sdf(points, mesh, batch_size=100000):
         sdf_vals.append(dists)
     return np.concatenate(sdf_vals, axis=0)
 
-def simplify_trimesh(tri_mesh, target_faces=100000):
+def simplify_trimesh(tri_mesh, target_faces=50000):
     if len(tri_mesh.faces) <= target_faces:
         return tri_mesh  # No need to simplify
 
@@ -80,13 +80,15 @@ def process_shape(root_dir, shape_id, output_dir, num_surface=5000, num_random=5
     if not os.path.exists(obj_dir):
         print(f"❌ No 'objs/' folder in {shape_id}, skipping.")
         return 0
-
+    print(f"Processing {shape_id} with {nb_parts} parts")
     try:
         pc_surface, part_labels_surface = sample_points_per_part(obj_dir, num_surface // nb_parts, noise_std=noise_std)
+       
         merged_mesh = trimesh.util.concatenate(
             [trimesh.load(os.path.join(obj_dir, f), force='mesh') for f in os.listdir(obj_dir) if f.endswith(".obj")]
         )
         merged_mesh = simplify_trimesh(merged_mesh, target_faces=50000)
+        
     except Exception as e:
         print(f"❌ Failed processing mesh for {shape_id}: {e}")
         return 0
@@ -98,8 +100,9 @@ def process_shape(root_dir, shape_id, output_dir, num_surface=5000, num_random=5
     # Combine and compute SDF
     points = np.vstack([pc_surface, pc_random])
     part_labels = np.concatenate([part_labels_surface, part_labels_random])
+    print(f"Computing SDF for {shape_id}")
     sdf = compute_sdf(points, merged_mesh)
-
+    print(f"Computed SDF for {shape_id}")
     os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(output_dir, f"{shape_id}.npy")
     np.save(output_path, np.hstack([points, sdf.reshape(-1, 1), part_labels.reshape(-1, 1)]))
@@ -115,7 +118,7 @@ def load_train_split(split_path):
 if __name__ == "__main__":
     split_path = "./data/knife/Knife.train.json"
     partnet_dir = "./data/knife"
-    output_dir = "./data/knife_preprocessed"
+    output_dir = "./data/knife_preprocessed_split"
 
     model_ids = load_train_split(split_path)
     print("Starting...")
