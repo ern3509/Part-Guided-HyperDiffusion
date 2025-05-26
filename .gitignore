@@ -1,6 +1,7 @@
 wandb
 outputs
 siren/experiment_scripts/logs
+data
 orig_meshes
 .idea
 meshes
