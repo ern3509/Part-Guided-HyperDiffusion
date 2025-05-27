@@ -505,6 +505,10 @@ class PointCloud(Dataset):
         if is_mesh:
             if cfg.strategy == "save_pc":
                 obj: trimesh.Trimesh = trimesh.load(path)
+                
+                #check if the object is watertight, if not repair object
+                #obj = self.repair(obj)
+
                 vertices = obj.vertices
                 vertices -= np.mean(vertices, axis=0, keepdims=True)
                 v_max = np.amax(vertices)
@@ -516,6 +520,8 @@ class PointCloud(Dataset):
                 n_points_uniform = total_points  # int(total_points * 0.5)
                 n_points_surface = total_points  # total_points
 
+                
+
                 points_uniform = np.random.uniform(
                     -0.5, 0.5, size=(n_points_uniform, 3)
                 )
@@ -523,21 +529,25 @@ class PointCloud(Dataset):
                 points_surface += 0.01 * np.random.randn(n_points_surface, 3)
                 points = np.concatenate([points_surface, points_uniform], axis=0)
 
-                inside_surface_values = igl.fast_winding_number_for_meshes(
+                #Documenatation: Determine if a point is inside or outside the mesh surface, change fast winding with classic winding
+                inside_surface_values = igl.winding_number(
                     obj.vertices, obj.faces, points
                 )
-                thresh = 0.5
+                thresh = 0
+                #Documentation: Here the distance value of each point relative to the mesh surface ist replace with a boolean value(in or out)
                 occupancies_winding = np.piecewise(
                     inside_surface_values,
                     [inside_surface_values < thresh, inside_surface_values >= thresh],
                     [0, 1],
                 )
+                
                 occupancies = occupancies_winding[..., None]
                 print(points.shape, occupancies.shape, occupancies.sum())
                 point_cloud = points
                 point_cloud = np.hstack((point_cloud, occupancies))
                 print(point_cloud.shape, points.shape, occupancies.shape)
-
+                distances = inside_surface_values[..., None]
+                point_cloud_with_distance = np.hstack((points, distances))
         else:
             point_cloud = np.genfromtxt(path)
         print("Finished loading point cloud")
@@ -600,6 +610,9 @@ class PointCloud(Dataset):
                     obj.vertices, obj.faces, coords
                 )
                 thresh = 0.5
+
+               
+
                 occupancies = np.piecewise(
                     inside_surface_values,
                     [inside_surface_values < thresh, inside_surface_values >= thresh],
@@ -624,13 +637,37 @@ class PointCloud(Dataset):
             self.coords = np.array(self.coords)
             self.occupancies = np.array(self.occupancies)
         elif cfg.strategy == "save_pc":
+            print("save_pc!!!!!")
             self.coords = point_cloud[:, :3]
             self.normals = point_cloud[:, 3:]
 
             point_cloud_xyz = np.hstack((self.coords, self.normals))
             os.makedirs(pc_folder, exist_ok=True)
-            np.save(os.path.join(pc_folder, os.path.basename(path)), point_cloud_xyz)
+            npy_file = os.path.join(pc_folder, os.path.basename(path) + ".npy")
+            np.save(npy_file, point_cloud)      #_xyz
+
+            #Save the pts format:
+            print(f"file name is {npy_file}")
+            points = np.load(npy_file)
+            print(points[:3])
+            points = self.set_point_cloud_color(points)
+
+            with open(os.path.join(pc_folder, os.path.basename(path) + "with_occu.pts"), "w") as f:
+                for point in points:
+                    line = " ".join(map(str, point))
+                    f.write(f"{line}\n")
+
+            #transform from xyzocc to xyz for meshlab
+            pts_points = np.delete(points, 3, axis= 1)# points[points[:, 3] == 1]
+            #pts_points = points[:, 0:3]
+
+            with open(os.path.join(pc_folder, os.path.basename(path) + ".pts"), "w") as f:
+                for point in pts_points:
+                    line = " ".join(map(str, point))
+                    f.write(f"{line}\n")
+
         else:
+            print("top!!!!!")
             point_cloud = np.load(
                 os.path.join(pc_folder, os.path.basename(path) + ".npy")
             )
@@ -644,10 +681,42 @@ class PointCloud(Dataset):
 
         self.on_surface_points = on_surface_points
 
+    def set_point_cloud_color(self, pts):
+        color = np.zeros((len(pts), 3))
+        for i in range(len(pts)):
+            color[i] = [0, 0, 0] if pts[i, 3] == 0 else [0, 0.5 ,0.5]
+        result = np.hstack((pts, color)) 
+        return result
+
     def __len__(self):
         if self.move:
             return self.coords[0].shape[0] // self.on_surface_points
         return self.coords.shape[0] // self.on_surface_points
+    
+    def repair(self, obj: trimesh.Trimesh):
+        new_obj = obj
+
+        print(f"number of open boundaries: {len(trimesh.repair.broken_faces(obj))}")
+        print(f"volume: {obj.is_volume}")
+        if obj.is_watertight:
+            print(f"the object is watertight")
+
+        else:
+            print(f"the object is not watertight /n starting repair...")
+            obj.fill_holes()
+            new_obj = obj
+            if new_obj.is_watertight:
+                print(f"the obj is now watertight after fixing holes")
+            else:
+                new_obj.fix_normals()
+                new_obj = new_obj
+                if new_obj.is_watertight:
+                    print(f"the obj is now watertight after fixing normals")
+                else:
+                    print("repairing was not succesfull")
+
+        return new_obj
+        
 
     def __getitem__(self, idx):
         time = np.random.randint(0, self.total_time, size=self.total_time)
@@ -682,6 +751,10 @@ class PointCloud(Dataset):
         return {"coords": torch.from_numpy(coords).float()}, {
             "sdf": torch.from_numpy(occs)
         }
+    
+    def __mergepointcloud__(self, pc):
+
+        pass
 
 
 class Video(Dataset):

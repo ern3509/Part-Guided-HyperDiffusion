@@ -64,6 +64,7 @@ def main(cfg: DictConfig):
     root_path = os.path.join(cfg.logging_root, cfg.exp_name)
     mesh_jitter = cfg.mesh_jitter
     multip_cfg = cfg.multi_process
+    #Documentation: Dataset is given here
     files = [
         file
         for file in os.listdir(cfg.dataset_folder)
