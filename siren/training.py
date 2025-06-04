@@ -45,7 +45,7 @@ def train(
             optim,
             patience=cfg.scheduler.patience_adaptive,
             factor=cfg.scheduler.factor,
-            verbose=True,
+          #  verbose=True,
             threshold=cfg.scheduler.threshold,
             min_lr=cfg.scheduler.min_lr,
         )
@@ -77,7 +77,7 @@ def train(
     best_loss = float("inf")
     patience = cfg.scheduler.patience
     num_bad_epochs = 0
-
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     with tqdm(total=len(train_dataloader) * epochs) as pbar:
         train_losses = []
         for epoch in range(epochs):
@@ -91,8 +91,8 @@ def train(
             for step, (model_input, gt) in enumerate(train_dataloader):
                 start_time = time.time()
 
-                model_input = {key: value.cuda() for key, value in model_input.items()}
-                gt = {key: value.cuda() for key, value in gt.items()}
+                model_input = {key: value.to(device) for key, value in model_input.items()}
+                gt = {key: value.to(device) for key, value in gt.items()}
 
                 if double_precision:
                     model_input = {
@@ -115,6 +115,7 @@ def train(
                     optim.step(closure)
 
                 model_output = model(model_input)
+
                 losses = loss_fn(model_output, gt, model)
 
                 train_loss = 0.0
@@ -125,11 +126,14 @@ def train(
                         # writer.add_scalar(loss_name + "_weight", loss_schedules[loss_name](total_steps), total_steps)
                         # wandb.log({loss_name + "_weight": loss_schedules[loss_name](total_steps)})
                         single_loss *= loss_schedules[loss_name](total_steps)
-
+                        wandb.log({f"{loss_name}_weight": loss_schedules[loss_name](total_steps)})
+                        
                     # writer.add_scalar(loss_name, single_loss, total_steps)
                     # wandb.log({loss_name: single_loss})
+                    wandb.log({loss_name: single_loss.item()})
                     train_loss += single_loss
                     # wandb.log({loss_name: single_loss})
+  
                 train_losses.append(train_loss.item())
                 total_loss += train_loss.item() * len(model_output)
                 total_items += len(model_output)
@@ -195,9 +199,10 @@ def train(
                 num_bad_epochs = 0
             else:
                 num_bad_epochs += 1
-            optim.param_groups[0]["lr"] = max(
-                optim.param_groups[0]["lr"], cfg.scheduler.min_lr
-            )
+            #optim.param_groups[0]["lr"] = max(
+            #    optim.param_groups[0]["lr"], cfg.scheduler.min_lr
+            #)
+
             if cfg.strategy == "continue":
                 torch.save(
                     model.state_dict(),

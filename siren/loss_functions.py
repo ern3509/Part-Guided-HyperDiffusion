@@ -291,7 +291,7 @@ def helmholtz_pml(model_output, gt):
     }
 
 
-def occ_sigmoid(model_output, gt, model, cfg=None, first_state_dict=None):
+def occ_sigmoid1(model_output, gt, model, cfg=None, first_state_dict=None):
     gt_sdf = gt["sdf"]
     pred_sdf = model_output["model_out"]
     if cfg.kl_weight > 0 and first_state_dict is not None:
@@ -321,6 +321,36 @@ def occ_sigmoid(model_output, gt, model, cfg=None, first_state_dict=None):
         # loss = F.binary_cross_entropy_with_logits(pred_sdf.squeeze(-1), gt_sdf.squeeze(-1))
         # return {'occupancy': loss}
         return {"occupancy": loss.sum(-1).mean()}
+
+def occ_sigmoid(model_output, gt, model, cfg=None, first_state_dict=None):
+    gt_sdf = gt["sdf"]
+    pred_sdf = model_output["model_out"]
+    
+    #pos_weight = torch.tensor(10.0).to(pred_sdf.device)
+    loss = F.binary_cross_entropy_with_logits(
+        pred_sdf.squeeze(-1), gt_sdf.squeeze(-1), reduction="none"
+    )   
+    
+    if cfg.kl_weight > 0 and first_state_dict is not None:
+        param_arr = [p.flatten() for p in model.parameters()]
+        curr_vec = torch.hstack(param_arr)
+        curr_dist = torch.distributions.Normal(
+            torch.mean(curr_vec), torch.var(curr_vec)
+        )
+
+        param_arr = [first_state_dict[k].flatten() for k in first_state_dict]
+        ref_vec = torch.hstack(param_arr)
+        ref_dist = torch.distributions.Normal(
+            torch.mean(ref_vec), torch.var(ref_vec)
+        )
+
+        kl = torch.distributions.kl_divergence(curr_dist, ref_dist)
+        return {
+            "occupancy": loss,
+            "kl_weight": cfg.kl_weight * kl
+        }
+    
+    return {"occupancy": loss}
 
 
 def occ_tanh(model_output, gt, model):

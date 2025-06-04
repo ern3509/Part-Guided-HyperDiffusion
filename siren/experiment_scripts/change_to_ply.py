@@ -7,7 +7,8 @@ import open3d as o3d
 from glob import glob
 import matplotlib.pyplot as plt
 
-data = np.load("./data/knife_preprocessed/944.npy")
+name = "1162"
+data = np.load(f"./data/knife_preprocessed/{name}.npy")
 points = data[:, :3]
 sdf = data[:, 3]
 
@@ -16,7 +17,7 @@ sdf_normalized = (sdf - sdf.min()) / (sdf.max() - sdf.min())
 colors = (plt.cm.jet(sdf_normalized)[:, :3] * 255).astype(np.uint8)  # RGB colormap
 
 # Write to colored PLY
-with open("your_shape_id_colored.ply", "w") as f:
+with open(f"./data/knife_colored_ply/{name}.ply", "w") as f:
     f.write("ply\n")
     f.write("format ascii 1.0\n")
     f.write(f"element vertex {points.shape[0]}\n")
