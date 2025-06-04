@@ -20,6 +20,15 @@ def merge_parts(obj_dir):
     return trimesh.util.concatenate(meshes)
 
 
+def compute_sdf(points, mesh, batch_size=100000):
+    from trimesh.proximity import signed_distance
+    sdf_vals = []
+    for i in range(0, len(points), batch_size):
+        batch = points[i:i+batch_size]
+        dists = signed_distance(mesh, batch)
+        sdf_vals.append(dists)
+    return np.concatenate(sdf_vals, axis=0)
+
 def simplify_trimesh(tri_mesh, target_faces=100000):
     if len(tri_mesh.faces) <= target_faces:
         return tri_mesh  # No need to simplify
@@ -37,7 +46,6 @@ def simplify_trimesh(tri_mesh, target_faces=100000):
         faces=np.asarray(simplified.triangles)
     )
     return simplified_trimesh
-
 
 def normalize_and_center_mesh(mesh):
     vertices = mesh.vertices.copy()
@@ -72,7 +80,6 @@ def sample_and_label_winding(mesh, n_total=20000):
 
 def process_shape(root_dir, shape_id, output_dir, output_type, num_total=20000, noise_std=0.01):
     obj_dir = os.path.join(root_dir, shape_id, "objs")
-
     if not os.path.exists(obj_dir):
         print(f"❌ No 'objs/' folder in {shape_id}, skipping.")
         return 0
@@ -103,7 +110,6 @@ def load_train_split(split_path):
     with open(split_path, "r") as f:
         split = json.load(f)
     return [entry["anno_id"] for entry in split]
-
 
 if __name__ == "__main__":
     # Customize these paths:

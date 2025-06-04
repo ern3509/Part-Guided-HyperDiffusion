@@ -7,6 +7,7 @@ import open3d as o3d
 from glob import glob
 import matplotlib.pyplot as plt
 
+
 name = "1162"
 data = np.load(f"./data/knife_preprocessed/{name}.npy")
 points = data[:, :3]
