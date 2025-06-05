@@ -48,31 +48,50 @@ def simplify_trimesh(tri_mesh, target_faces=50000):
     )
     return simplified_trimesh
 
-def sample_points_per_part(obj_dir, num_points_per_part=1000, noise_std=0.01):
+def normalize_and_center_mesh(mesh):
+    vertices = mesh.vertices.copy()
+    vertices -= np.mean(vertices, axis=0, keepdims=True)
+    v_max = np.max(vertices)
+    v_min = np.min(vertices)
+    vertices *= 0.5 * 0.95 / max(abs(v_min), abs(v_max))
+    mesh.vertices = vertices
+    return mesh
+
+def sample_points_per_part(obj_dir, total_points=10000, noise_std=0.01):
     point_list = []
     label_list = []
-
     part_files = sorted([f for f in os.listdir(obj_dir) if f.endswith(".obj")])
+    n_parts = len(part_files)
+    points_per_part = total_points // n_parts
+
     for label, file in enumerate(part_files):
         mesh = trimesh.load(os.path.join(obj_dir, file), force='mesh')
         if mesh.is_empty:
             continue
+        mesh = normalize_and_center_mesh(mesh)
 
-        num_points = min(num_points_per_part, mesh.faces.shape[0] * 10)  # safeguard
-        points = mesh.sample(num_points)
-        noise = np.random.normal(scale=noise_std, size=points.shape)
-        points += noise
+        n_surface = points_per_part // 3
+        n_near = n_surface
+        n_far = points_per_part - n_surface - n_near
 
-        point_list.append(points)
-        label_list.append(np.full((points.shape[0],), label))
+        surface = mesh.sample(n_surface)
+        near_surface = surface + noise_std * np.random.randn(*surface.shape)
+        far = np.random.uniform(-0.5, 0.5, size=(n_far, 3))
+        all_points = np.vstack([surface, near_surface, far])
+
+        wn = igl.winding_number(mesh.vertices, mesh.faces, all_points)
+        occ = (wn >= 0.5).astype(np.float32)
+
+        labeled_points = all_points[occ == 1]
+        labels = np.full((labeled_points.shape[0],), label)
+        point_list.append(labeled_points)
+        label_list.append(labels)
 
     if not point_list:
-        raise RuntimeError(f"No valid meshes found in {obj_dir}")
+        raise RuntimeError(f"No valid meshes in {obj_dir}")
+    
+    return np.vstack(point_list), np.concatenate(label_list)
 
-    pc_surface = np.vstack(point_list)
-    part_labels = np.concatenate(label_list)
-
-    return pc_surface, part_labels
 
 def process_shape(root_dir, shape_id, output_dir, num_surface=5000, num_random=5000, noise_std=0.01):
     obj_dir = os.path.join(root_dir, shape_id, "objs")
@@ -82,8 +101,8 @@ def process_shape(root_dir, shape_id, output_dir, num_surface=5000, num_random=5
         return 0
     print(f"Processing {shape_id} with {nb_parts} parts")
     try:
-        pc_surface, part_labels_surface = sample_points_per_part(obj_dir, num_surface // nb_parts, noise_std=noise_std)
-       
+        pc_surface, part_labels_surface = sample_points_per_part(obj_dir, total_points=num_surface, noise_std=noise_std)
+
         merged_mesh = trimesh.util.concatenate(
             [trimesh.load(os.path.join(obj_dir, f), force='mesh') for f in os.listdir(obj_dir) if f.endswith(".obj")]
         )
