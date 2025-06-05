@@ -23,6 +23,7 @@ def create_mesh_v2(
     vis_transform=None,
 ):
     start = time.time()
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     ply_filename = filename
     world_to_mc_grid = torch.eye(4)
     world_to_mc_grid[0, 0] = N / 2
@@ -72,7 +73,7 @@ def create_mesh_v2(
     )
 
     while head < num_samples:
-        sample_subset = samples[head : min(head + max_batch, num_samples), 0:3].cuda()
+        sample_subset = samples[head : min(head + max_batch, num_samples), 0:3].to(device)
 
         samples[head : min(head + max_batch, num_samples), 3] = (
             decoder(sample_subset).squeeze().detach().cpu()  # .squeeze(1)
@@ -149,6 +150,8 @@ def create_mesh(
     time_val=-1,
 ):
     start = time.time()
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     ply_filename = filename
     if filename is not None:
         os.makedirs(os.path.dirname(filename), exist_ok=True)
@@ -181,12 +184,12 @@ def create_mesh(
 
     while head < num_samples:
         # print(head)
-        sample_subset = samples[head : min(head + max_batch, num_samples), 0:3].cuda()
+        sample_subset = samples[head : min(head + max_batch, num_samples), 0:3].to(device)
         if time_val >= 0:
             sample_subset = torch.hstack(
                 (
                     sample_subset,
-                    torch.ones((sample_subset.shape[0], 1)).cuda() * time_val,
+                    torch.ones((sample_subset.shape[0], 1)).to(device) * time_val,
                 )
             )
         samples[head : min(head + max_batch, num_samples), 3] = (

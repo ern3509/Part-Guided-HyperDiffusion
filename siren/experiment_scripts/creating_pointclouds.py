@@ -27,7 +27,7 @@ def compute_sdf(points, mesh, batch_size=100000):
         sdf_vals.append(dists)
     return np.concatenate(sdf_vals, axis=0)
 
-def simplify_trimesh(tri_mesh, target_faces=100000):
+def simplify_trimesh(tri_mesh, target_faces=2500):
     if len(tri_mesh.faces) <= target_faces:
         return tri_mesh  # No need to simplify
 

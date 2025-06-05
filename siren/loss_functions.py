@@ -315,9 +315,18 @@ def occ_sigmoid(model_output, gt, model, cfg=None, first_state_dict=None):
             "kl_weight": cfg.kl_weight * kl_loss,
         }
     else:
+        #Documentation: Weighting of the loss due to an unbalanced distribution of the point cloud
+        pos_weight = torch.tensor(4.0).to(pred_sdf.device)
         loss = F.binary_cross_entropy_with_logits(
-            pred_sdf.squeeze(-1), gt_sdf.squeeze(-1), reduction="none"
+            pred_sdf.squeeze(-1), gt_sdf.squeeze(-1), reduction="none", pos_weight=pos_weight
         )
+
+        ''''
+        Classification
+        part_logits = model_output["part_classification"]
+        part_labels = gt["part_labels"]
+        part_loss = F.cross_entropy(part_logits, part_labels)
+        '''
         # loss = F.binary_cross_entropy_with_logits(pred_sdf.squeeze(-1), gt_sdf.squeeze(-1))
         # return {'occupancy': loss}
         return {"occupancy": loss.sum(-1).mean()}
@@ -366,3 +375,6 @@ def sdf(model_output, gt, model, cfg=None):
 
 
 # inter = 3e3 for ReLU-PE
+
+def sdf_and_part_classification(model_output, gt, model , cfg= None):
+    pass

@@ -32,6 +32,7 @@ def train(
     filename=None,
     cfg=None,
 ):
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     optim = torch.optim.Adam(lr=lr, params=model.parameters())
     if cfg.scheduler.type == "step":
         scheduler = StepLR(
@@ -91,8 +92,8 @@ def train(
             for step, (model_input, gt) in enumerate(train_dataloader):
                 start_time = time.time()
 
-                model_input = {key: value.cuda() for key, value in model_input.items()}
-                gt = {key: value.cuda() for key, value in gt.items()}
+                model_input = {key: value.to(device) for key, value in model_input.items()}
+                gt = {key: value.to(device) for key, value in gt.items()}
 
                 if double_precision:
                     model_input = {
@@ -188,8 +189,10 @@ def train(
                 curr_bad_epochs = scheduler.num_bad_epochs
                 new_lr = next(iter(optim.param_groups))["lr"]
                 new_best = scheduler.best
-            else:
+            elif cfg.scheduler.type == "step":
                 scheduler.step()
+            else:
+                None
             if best_loss > epoch_loss:
                 best_loss = epoch_loss
                 num_bad_epochs = 0

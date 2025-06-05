@@ -12,11 +12,11 @@ augment: False
 augment_amount: 0
 jitter_augment: False
 normalization_factor: 1
-timesteps: 500
-epochs: 6000
+timesteps: 200 #500
+epochs: 10 #6000
 scheduler: True
-scheduler_step: 200
-best_model_save_path:
+scheduler_step: 2 #200
+best_model_save_path: 
 mode: train
 mlps_folder_train: ./mlp_weights/3d_128_plane_multires_4_manifoldplus_slower_no_clipgrad
 model_resume_path:
@@ -48,9 +48,9 @@ diff_config:
     loss_type: MSE
 transformer_config:
   params:
-    n_embd: 2880
-    n_layer: 12
-    n_head: 16
+    n_embd: 288 #2880
+    n_layer: 3 #12
+    n_head: 4 #16
     split_policy: layer_by_layer
     use_global_residual: False
     condition: 'no'

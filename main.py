@@ -51,6 +51,7 @@ def main(cfg: DictConfig):
 
     wandb_logger = WandbLogger()
     wandb_logger.log_text("config", ["config"], [[str(config)]])
+    #wandb:logger.log()
     print("wandb", wandb.run.name, wandb.run.id)
 
     train_dt = val_dt = test_dt = None

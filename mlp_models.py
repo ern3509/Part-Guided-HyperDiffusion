@@ -56,6 +56,7 @@ class MLP(nn.Module):
 class MLP3D(nn.Module):
     def __init__(
         self,
+        n_of_parts,
         out_size,
         hidden_neurons,
         use_leaky_relu=False,
@@ -63,6 +64,7 @@ class MLP3D(nn.Module):
         multires=10,
         output_type=None,
         move=False,
+        semantic = False,
         **kwargs,
     ):
         super().__init__()
@@ -74,6 +76,8 @@ class MLP3D(nn.Module):
             log_sampling=True,
             periodic_fns=[torch.sin, torch.cos],
         )
+        self.semantic = semantic
+        self.n_of_parts = n_of_parts
         self.layers = nn.ModuleList([])
         self.output_type = output_type
         self.use_leaky_relu = use_leaky_relu
@@ -89,11 +93,16 @@ class MLP3D(nn.Module):
         coords_org = model_input["coords"].clone().detach().requires_grad_(True)
         x = coords_org
         x = self.embedder.embed(x)
+        activations = []
         for i, layer in enumerate(self.layers[:-1]):
             x = layer(x)
+            if self.semantic:
+                activations.append(x)
             x = F.leaky_relu(x) if self.use_leaky_relu else F.relu(x)
         x = self.layers[-1](x)
-
+        if self.semantic:
+            activations.append(x)
+            total_neurons = torch.cat(activations, dim=1)
         if self.output_type == "occ":
             # x = torch.sigmoid(x)
             pass
@@ -103,6 +112,108 @@ class MLP3D(nn.Module):
             x = x
         else:
             raise f"This self.output_type ({self.output_type}) not implemented"
-        x = dist.Bernoulli(logits=x).logits
+        #x = dist.Bernoulli(logits=x).logits
+
+        if self.semantic:
+            # Compute auxiliary output directly from selected activations
+            class_mask = ClassMaskCreator(self, self.n_of_parts)
+            part_outputs = []
+            for class_id in range(class_mask):
+                mask = class_mask.get_mask(class_id)
+                masked_activation = mask*total_neurons
+                self.classification_head = nn.Linear(in_features=masked_activation.shape(1), out_features= len(class_mask), bias=True)
+                class_output = self.classification_head(masked_activation)
+            return {"model_in": coords_org, "model_out": x, "part_classification":class_output}
+                
+
 
         return {"model_in": coords_org, "model_out": x}
+
+import torch
+import torch.nn as nn
+
+class ClassMaskCreator:
+    def __init__(self, model: nn.Module, n_classes: int):
+        """
+        Initialize the class-wise neuron masks for the MLP.
+
+        Args:
+            model (nn.Module): The MLP model
+            n_classes (int): Number of semantic part classes
+        """
+        self.n_classes = n_classes
+        self.class_masks = {}
+
+        # Compute total number of neurons across all linear layers
+        total_neurons = sum(
+            layer.out_features for layer in model.layers if isinstance(layer, nn.Linear)
+        )
+
+        neurons_per_class = total_neurons // n_classes
+        start_idx = 0
+
+        # Create masks for each class
+        for class_id in range(n_classes):
+            mask = torch.zeros(total_neurons)
+
+            end_idx = start_idx + neurons_per_class
+            # Ensure last class gets any remainder
+            if class_id == n_classes - 1:
+                end_idx = total_neurons
+
+            mask[start_idx:end_idx] = 1.0
+
+            self.class_masks[class_id] = mask
+            start_idx = end_idx
+
+    def get_mask(self, class_id: int):
+        """
+        Retrieve the binary mask for a given class.
+
+        Args:
+            class_id (int): The semantic part class ID
+
+        Returns:
+            torch.Tensor: Binary mask of shape [total_neurons]
+        """
+        return self.class_masks[class_id]
+
+
+class class_to_param_mask_map():
+    ''''
+    The goal of this function is to assign an additional classification task to blocks of MLP 
+    '''
+    def __init__(self, model, 
+                 n=1 ):#number of part
+        self.class_mask = {class_id:{} for class_id in range(n)}
+       
+        param_dict = dict(model.named_parameters())
+        
+        for name, param in param_dict:
+            shape = param.shape
+
+            for class_id in range(n):
+                self.class_masks[class_id][name] = torch.zeros_like(param.data)
+
+            if len(shape) == 2:
+                out_features = shape[1] #get the output shape of the layer
+                neurons_per_class = out_features // n #choice of  a magic number is justified due to the number of neuron per hidden layer (128)
+
+                for class_id in range(n):
+                    start = class_id * neurons_per_class
+                    # Ensure last class gets the remainder if not divisible
+                    end = (class_id + 1) * neurons_per_class if class_id != n - 1 else out_features
+                    # Set those rows to 1 in the class mask
+                    self.class_masks[class_id][name][start:end, :] = 1
+
+            elif len(shape) == 1: #bias
+                # For 1D tensors like bias (e.g., [out_features])
+                length = shape[0]
+                elems_per_class = length // n  # split into class chunks
+
+                for class_id in range(n):
+                    start = class_id * elems_per_class
+                    end = (class_id + 1) * elems_per_class if class_id != n - 1 else length
+                    self.class_masks[class_id][name][start:end] = 1  # assign to class
+
+    pass

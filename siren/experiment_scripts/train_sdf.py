@@ -34,7 +34,7 @@ from siren.experiment_scripts.test_sdf import SDFDecoder
 
 def get_model(cfg):
     if cfg.model_type == "mlp_3d":
-        model = MLP3D(**cfg.mlp_config)
+        model = MLP3D(cfg.multi_process.n_of_parts, **cfg.mlp_config)
     nparameters = sum(p.numel() for p in model.parameters())
     print(model)
     print("Total number of parameters: %d" % nparameters)
@@ -125,7 +125,8 @@ def main(cfg: DictConfig):
                 continue
 
             # Define the model.
-            model = get_model(cfg).cuda()
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            model = get_model(cfg).to(device)
 
             # Define the loss
             loss_fn = loss_functions.sdf
@@ -206,6 +207,7 @@ def main(cfg: DictConfig):
             x_0s.append(weights)
             tmp = torch.stack(x_0s)
             var = torch.var(tmp, dim=0)
+            #Why?
             print(
                 var.shape,
                 var.mean().item(),
