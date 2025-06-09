@@ -17,6 +17,8 @@ import trimesh
 from PIL import Image
 from torch.utils.data import Dataset
 from torchvision.transforms import Compose, Normalize, Resize, ToTensor
+from trimesh.proximity import signed_distance
+from experiment_scripts import creating_pointclouds
 
 
 def anime_read(filename):
@@ -502,13 +504,30 @@ class PointCloud(Dataset):
         self.faces = None
         self.move = cfg.mlp_config.move
         self.cfg = cfg
+
+        if not cfg.in_out:
+                pc_folder = os.path.dirname(path) + "_" + str(cfg.n_points) + "_pc"
+        else:
+            pc_folder = (
+            os.path.dirname(path)
+            + "_"
+            + str(cfg.n_points)
+            + "_pc_"
+            + f"{self.output_type}_in_out_{str(cfg.in_out)}"
+        )
+
         if is_mesh:
             if cfg.strategy == "save_pc":
+
+
+
                 obj: trimesh.Trimesh = trimesh.load(path)
+
+                obj = creating_pointclouds.simplify_trimesh(obj)
                 
                 #check if the object is watertight, if not repair object
                 #obj = self.repair(obj)
-
+                
                 vertices = obj.vertices
                 vertices -= np.mean(vertices, axis=0, keepdims=True)
                 v_max = np.amax(vertices)
@@ -516,24 +535,30 @@ class PointCloud(Dataset):
                 vertices *= 0.5 * 0.95 / (max(abs(v_min), abs(v_max)))
                 obj.vertices = vertices
                 self.obj = obj
+                
+
                 total_points = cfg.n_points  # 100000
                 n_points_uniform = total_points  # int(total_points * 0.5)
                 n_points_surface = total_points  # total_points
-
-                
 
                 points_uniform = np.random.uniform(
                     -0.5, 0.5, size=(n_points_uniform, 3)
                 )
                 points_surface = obj.sample(n_points_surface)
-                points_surface += 0.01 * np.random.randn(n_points_surface, 3)
-                points = np.concatenate([points_surface, points_uniform], axis=0)
-
+                
+                near_surface = points_surface + 0.01 * np.random.randn(*points_surface.shape)
+                points = np.concatenate([points_surface, points_uniform, near_surface], axis=0)
+                print("test")
+                
                 #Documenatation: Determine if a point is inside or outside the mesh surface, change fast winding with classic winding
                 inside_surface_values = igl.winding_number(
-                    obj.vertices, obj.faces, points
+                    np.array(obj.vertices), np.array(obj.faces), points
                 )
-                thresh = 0
+                sign_inside_surface_values = signed_distance(obj, points)
+                print(f"max : {max(inside_surface_values)} /n min: {min(inside_surface_values)} /n mean: {np.average(inside_surface_values)}")
+                print(f"max_si : {max(sign_inside_surface_values)} /n min_si: {min(sign_inside_surface_values)} /n mean_si: {np.average(sign_inside_surface_values)}")
+ 
+                thresh = 0.5
                 #Documentation: Here the distance value of each point relative to the mesh surface ist replace with a boolean value(in or out)
                 occupancies_winding = np.piecewise(
                     inside_surface_values,
@@ -545,22 +570,15 @@ class PointCloud(Dataset):
                 print(points.shape, occupancies.shape, occupancies.sum())
                 point_cloud = points
                 point_cloud = np.hstack((point_cloud, occupancies))
+                
                 print(point_cloud.shape, points.shape, occupancies.shape)
                 distances = inside_surface_values[..., None]
                 point_cloud_with_distance = np.hstack((points, distances))
+                
         else:
             point_cloud = np.genfromtxt(path)
         print("Finished loading point cloud")
-        if not cfg.in_out:
-            pc_folder = os.path.dirname(path) + "_" + str(cfg.n_points) + "_pc"
-        else:
-            pc_folder = (
-                os.path.dirname(path)
-                + "_"
-                + str(cfg.n_points)
-                + "_pc_"
-                + f"{self.output_type}_in_out_{str(cfg.in_out)}"
-            )
+        
 
         self.total_time = 16
 
@@ -650,10 +668,18 @@ class PointCloud(Dataset):
             print(f"file name is {npy_file}")
             points = np.load(npy_file)
             print(points[:3])
-            points = self.set_point_cloud_color(points)
+            #points = self.set_point_cloud_color(points)
 
             with open(os.path.join(pc_folder, os.path.basename(path) + "with_occu.pts"), "w") as f:
                 for point in points:
+                    line = " ".join(map(str, point))
+                    f.write(f"{line}\n")
+
+            pts_points2 = points[points[:, -1] == 1.0]
+            pts_points2 = pts_points2[:, :3]
+
+            with open(os.path.join(pc_folder, os.path.basename(path) + "erwan.pts"), "w") as f:
+                for point in pts_points2:
                     line = " ".join(map(str, point))
                     f.write(f"{line}\n")
 
@@ -665,6 +691,8 @@ class PointCloud(Dataset):
                 for point in pts_points:
                     line = " ".join(map(str, point))
                     f.write(f"{line}\n")
+
+            
 
         else:
             print("top!!!!!")
