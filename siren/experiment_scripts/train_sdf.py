@@ -45,7 +45,7 @@ def get_model(cfg):
 @hydra.main(
     version_base=None,
     config_path="../../configs/overfitting_configs",
-    config_name="overfit_plane",
+    config_name="overfit_knife",
 )
 def main(cfg: DictConfig):
     wandb.init(
@@ -91,13 +91,14 @@ def main(cfg: DictConfig):
         os.path.join(cfg.dataset_folder, "train_split.lst"), dtype="str"
     )
     train_object_names = set(train_object_names)
+    
     for i, file in enumerate(files):
         # We used to have mesh jittering for augmentation but not using it anymore
         for j in range(10 if mesh_jitter and i > 0 else 1):
             # Quick workaround to rename from obj to off
             # if file.endswith(".obj"):
             #     file = file[:-3] + "off"
-
+            print(file)
             if not (file in train_object_names):
                 print(f"File {file} not in train_split")
                 continue
@@ -125,7 +126,7 @@ def main(cfg: DictConfig):
                 continue
 
             # Define the model.
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             model = get_model(cfg).to(device)
 
             # Define the loss
@@ -150,11 +151,12 @@ def main(cfg: DictConfig):
                 with torch.no_grad():
                     (model_input, gt) = next(iter(dataloader))
                     model_input = {
-                        key: value.cuda() for key, value in model_input.items()
+                        key: value.to(device) for key, value in model_input.items()
                     }
-                    gt = {key: value.cuda() for key, value in gt.items()}
+                    gt = {key: value.to(device) for key, value in gt.items()}
                     model_output = model(model_input)
                     loss = loss_fn(model_output, gt, model)
+
                 if loss["occupancy"] > 0.5:
                     print("Outlier:", loss)
                 continue
@@ -169,7 +171,7 @@ def main(cfg: DictConfig):
             ):
                 print("loaded")
                 model.load_state_dict(first_state_dict)
-
+      
             training.train(
                 model=model,
                 train_dataloader=dataloader,
@@ -196,7 +198,7 @@ def main(cfg: DictConfig):
                 and not multip_cfg.enabled
             ):
                 first_state_dict = model.state_dict()
-                print(curr_lr)
+                print("The current learning rate is", curr_lr)
             state_dict = model.state_dict()
 
             # Calculate statistics on the MLP
@@ -216,9 +218,9 @@ def main(cfg: DictConfig):
                 var.max().item(),
             )
             print(var.shape, torch.var(tmp))
-
+            
             # For the first 5 data, outputting shapes
-            if i < 5:
+            if i < 50:
                 sdf_decoder = SDFDecoder(
                     cfg.model_type,
                     checkpoint_path,
@@ -257,6 +259,7 @@ def main(cfg: DictConfig):
                     imgs = np.transpose(imgs, axes=(0, 3, 1, 2))
                     wandb.log({"animation": wandb.Video(imgs, fps=16)})
                 else:
+                    print("We are creating the mesh")
                     sdf_meshing.create_mesh(
                         sdf_decoder,
                         os.path.join(cfg.logging_root, f"{cfg.exp_name}_ply", filename),
@@ -265,7 +268,7 @@ def main(cfg: DictConfig):
                         if cfg.output_type == "occ" and cfg.out_act == "sigmoid"
                         else 0,
                     )
-
+                    return
 
 if __name__ == "__main__":
     main()

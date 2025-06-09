@@ -62,7 +62,7 @@ def create_mesh_v2(
 
     num_samples = N**3
     samples.requires_grad = False
-
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     head = 0
 
     print(
@@ -89,6 +89,8 @@ def create_mesh_v2(
         torch.mean(sdf_values).item(),
     )
     nz = torch.nonzero(sdf_values < 0)
+    print("SDF min:", sdf_values.min().item(), "max:", sdf_values.max().item(), "mean:", sdf_values.mean().item())
+
     sdf_values = sdf_values.reshape(N, N, N)
 
     end = time.time()
@@ -142,11 +144,11 @@ def create_mesh_v2(
 def create_mesh(
     decoder,
     filename=None,
-    N=256,
+    N=124,  # new: maybe reduce it or increase it (base: 256)
     max_batch=64**3,
     offset=None,
     scale=None,
-    level=0,
+    level=0,    # new: check the range of the values, and maybe change it (0, 0.5 depending on the mean of the values)
     time_val=-1,
 ):
     start = time.time()
@@ -164,6 +166,7 @@ def create_mesh(
     overall_index = torch.arange(0, N**3, 1, out=torch.LongTensor())
     samples = torch.zeros(N**3, 4)
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # transform first 3 columns
     # to be the x, y, z index
     samples[:, 2] = overall_index % N
@@ -198,6 +201,14 @@ def create_mesh(
         head += max_batch
 
     sdf_values = samples[:, 3]
+    sdf_values = torch.clamp(sdf_values, min=-100.0, max=100.0)
+
+    if torch.isnan(sdf_values).any():
+        print("❌ Mesh aborted: NaNs in SDF output")
+        return None, None, sdf_values
+    
+    print("SDF min:", sdf_values.min().item(), "max:", sdf_values.max().item(), "mean:", sdf_values.mean().item())
+
     sdf_values = sdf_values.reshape(N, N, N)
     end = time.time()
     # print("sampling takes: %f" % (end - start))

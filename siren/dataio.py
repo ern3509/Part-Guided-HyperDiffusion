@@ -484,7 +484,7 @@ class WaveSource(Dataset):
         }
 
 
-class PointCloud(Dataset):
+class PointCloud1(Dataset):
     def __init__(
         self,
         path,
@@ -577,6 +577,7 @@ class PointCloud(Dataset):
                 
         else:
             point_cloud = np.genfromtxt(path)
+            #point_cloud = np.load(path)
         print("Finished loading point cloud")
         
 
@@ -784,6 +785,89 @@ class PointCloud(Dataset):
 
         pass
 
+class PointCloud(Dataset):
+    def __init__(
+        self,
+        path,
+        on_surface_points,
+        is_mesh=True,
+        output_type="occ",
+        out_act="sigmoid",
+        n_points=200000,
+        cfg=None,
+    ):
+        super().__init__()
+        self.output_type = output_type
+        self.out_act = out_act
+        self.cfg = cfg
+        self.on_surface_points = on_surface_points
+        self.coords = None
+        self.occupancies = None
+
+        if path.endswith(".npy"):
+            print(f"🔹 Loading point cloud from NPY: {path}")
+            data = np.load(path)
+            self.coords = data[:, :3]
+            if data.shape[1] > 3:
+                self.occupancies = data[:, 3].reshape(-1, 1)
+            else:
+                raise ValueError("Expected at least 4 columns in .npy file")
+        else:
+            # Assume PartNet format with 'objs' subfolder
+            obj_dir = os.path.join(path, "objs")
+            if not os.path.exists(obj_dir):
+                raise FileNotFoundError(f"No 'objs' folder found in: {path}")
+
+            print(f"🔹 Merging .obj parts from {obj_dir}")
+            mesh = self.merge_parts(obj_dir)
+            points, occupancies = self.sample_and_label(mesh, n_points)
+            self.coords = points
+            self.occupancies = occupancies.reshape(-1, 1)
+
+    def merge_parts(self, obj_dir):
+        meshes = []
+        for file in sorted(os.listdir(obj_dir)):
+            if file.endswith(".obj"):
+                mesh = trimesh.load(os.path.join(obj_dir, file), force='mesh')
+                if not mesh.is_empty:
+                    meshes.append(mesh)
+        if not meshes:
+            raise RuntimeError(f"No valid .obj files in {obj_dir}")
+        return trimesh.util.concatenate(meshes)
+
+    def sample_and_label(self, mesh, n_points):
+        from trimesh.proximity import signed_distance
+
+        n_points_surface = n_points // 2
+        n_points_uniform = n_points - n_points_surface
+
+        surface = mesh.sample(n_points_surface)
+        surface += 0.01 * np.random.randn(*surface.shape)
+
+        random = np.random.uniform(low=-1, high=1, size=(n_points_uniform, 3))
+        points = np.vstack((surface, random))
+
+        print("🔹 Computing SDF...")
+        sdf = signed_distance(mesh, points)
+
+        if self.output_type == "occ":
+            occ = (sdf >= 0).astype(np.float32)
+            return points, occ
+        elif self.output_type == "sdf":
+            return points, sdf
+        else:
+            raise ValueError(f"Unknown output_type: {self.output_type}")
+
+    def __len__(self):
+        return self.coords.shape[0] // self.on_surface_points
+
+    def __getitem__(self, idx):
+        ixs = np.random.choice(self.coords.shape[0], size=self.on_surface_points, replace=False)
+        coords = self.coords[ixs]
+        occs = self.occupancies[ixs]
+        return {"coords": torch.from_numpy(coords).float()}, {
+            "sdf": torch.from_numpy(occs).float()
+        }
 
 class Video(Dataset):
     def __init__(self, path_to_video):

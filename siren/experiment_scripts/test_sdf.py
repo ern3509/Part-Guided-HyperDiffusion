@@ -31,6 +31,9 @@ class SDFDecoder(torch.nn.Module):
 
         if checkpoint_path is not None:
             self.model.load_state_dict(torch.load(checkpoint_path))
+
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
         self.model.to(device)
 
     def forward(self, coords):

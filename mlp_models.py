@@ -126,7 +126,6 @@ class MLP3D(nn.Module):
             return {"model_in": coords_org, "model_out": x, "part_classification":class_output}
                 
 
-
         return {"model_in": coords_org, "model_out": x}
 
 import torch
