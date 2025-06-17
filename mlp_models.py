@@ -83,26 +83,44 @@ class MLP3D(nn.Module):
         self.use_leaky_relu = use_leaky_relu
         in_size = self.embedder.out_dim
         self.layers.append(nn.Linear(in_size, hidden_neurons[0], bias=use_bias))
+
+        
+        ''''
+        self.classification_heads = nn.ModuleList([
+            nn.Linear(sum(hidden_neurons), 1)  # Each outputs a single logit
+            for _ in range(n_of_parts)
+        ])
+        '''
         for i, _ in enumerate(hidden_neurons[:-1]):
             self.layers.append(
                 nn.Linear(hidden_neurons[i], hidden_neurons[i + 1], bias=use_bias)
             )
         self.layers.append(nn.Linear(hidden_neurons[-1], out_size, bias=use_bias))
 
+        # Classification heads as additional layers
+        for i in range(n_of_parts):
+            self.layers.append(nn.Linear(sum(hidden_neurons), 1, bias=use_bias))
+
+        self.main_network_depth = len(hidden_neurons) + 1  # +1 for input layer
+        self.classification_head_indices = list(
+            range(self.main_network_depth, self.main_network_depth + n_of_parts))
+
     def forward(self, model_input):
         coords_org = model_input["coords"].clone().detach().requires_grad_(True)
         x = coords_org
         x = self.embedder.embed(x)
         activations = []
-        for i, layer in enumerate(self.layers[:-1]):
+
+        for i, layer in enumerate(self.layers[:self.main_network_depth]):
             x = layer(x)
-            if self.semantic:
-                activations.append(x)
-            x = F.leaky_relu(x) if self.use_leaky_relu else F.relu(x)
-        x = self.layers[-1](x)
-        if self.semantic:
-            activations.append(x)
-            total_neurons = torch.cat(activations, dim=1)
+            if i < self.main_network_depth - 1:
+                x = F.leaky_relu(x) if self.use_leaky_relu else F.relu(x)
+                if self.semantic:
+                    #for class_id in self.classification_head_indices:
+                    #    mask = class_mask.get_mask(class_id - self.classification_head_indices[0])   #the mask indices start at 0
+                    activations.append(x)
+        
+        total_neurons = torch.cat(activations, dim=2) if activations[0].dim() == 3 else torch.cat(activations, dim=1) #at inference there is no batching
         if self.output_type == "occ":
             # x = torch.sigmoid(x)
             pass
@@ -118,18 +136,19 @@ class MLP3D(nn.Module):
             # Compute auxiliary output directly from selected activations
             class_mask = ClassMaskCreator(self, self.n_of_parts)
             part_outputs = []
-            for class_id in range(class_mask):
-                mask = class_mask.get_mask(class_id)
+            for class_id in self.classification_head_indices:
+                mask = class_mask.get_mask(class_id - self.classification_head_indices[0])   #the mask indices start at 0
+                
                 masked_activation = mask*total_neurons
-                self.classification_head = nn.Linear(in_features=masked_activation.shape(1), out_features= len(class_mask), bias=True)
-                class_output = self.classification_head(masked_activation)
-            return {"model_in": coords_org, "model_out": x, "part_classification":class_output}
+                class_output = self.layers[class_id](masked_activation)
+                part_outputs.append(class_output.squeeze(-1))
+            
+            part_outputs = torch.cat(part_outputs, dim=0).T
+
+            return {"model_in": coords_org, "model_out": x, "part_classification":part_outputs}
                 
 
         return {"model_in": coords_org, "model_out": x}
-
-import torch
-import torch.nn as nn
 
 class ClassMaskCreator:
     def __init__(self, model: nn.Module, n_classes: int):
@@ -143,11 +162,14 @@ class ClassMaskCreator:
         self.n_classes = n_classes
         self.class_masks = {}
 
-        # Compute total number of neurons across all linear layers
-        total_neurons = sum(
-            layer.out_features for layer in model.layers if isinstance(layer, nn.Linear)
+        # Compute total number of neurons across a linear layer
+        #Caveat: we assume that as in hyperdiffusion paper the layer have the same number of neurons
+        total_neurons = model.layers[0].out_features #should be 128
+        ''''
+        sum(
+            layer.out_features for i, layer in enumerate(model.layers) if isinstance(layer, nn.Linear) and i < 3
         )
-
+        '''
         neurons_per_class = total_neurons // n_classes
         start_idx = 0
 

@@ -106,7 +106,7 @@ def main(cfg: DictConfig):
             filename = file.split(".")[0]
             filename = f"{filename}_jitter_{j}"
 
-            sdf_dataset = dataio.PointCloud(
+            sdf_dataset = dataio.PointCloud_with_semantic(
                 os.path.join(cfg.dataset_folder, file),
                 on_surface_points=cfg.batch_size,
                 is_mesh=True,
@@ -135,7 +135,7 @@ def main(cfg: DictConfig):
                 loss_fn = (
                     loss_functions.occ_tanh
                     if cfg.out_act == "tanh"
-                    else loss_functions.occ_sigmoid
+                    else loss_functions.occ_sigmoid_semantic
                 )
             loss_fn = partial(loss_fn, cfg=cfg)
             summary_fn = utils.wandb_sdf_summary

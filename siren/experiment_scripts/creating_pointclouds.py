@@ -122,7 +122,7 @@ if __name__ == "__main__":
     print("Starting...")
     i = 0
     existing_ids = [f[:-4] for f in os.listdir(output_dir) if f.endswith(".npy")]
-    existing_ids.extend(["1193", "963"])
+    existing_ids.extend(["1193", "1167"])
     print(existing_ids)
     for shape_id in tqdm(model_ids, desc="Processing shapes"):
         if shape_id in existing_ids:

@@ -18,8 +18,7 @@ from PIL import Image
 from torch.utils.data import Dataset
 from torchvision.transforms import Compose, Normalize, Resize, ToTensor
 from trimesh.proximity import signed_distance
-from experiment_scripts import creating_pointclouds
-
+from siren.experiment_scripts import creating_pointclouds
 
 def anime_read(filename):
     f = open(filename, "rb")
@@ -580,7 +579,6 @@ class PointCloud1(Dataset):
             #point_cloud = np.load(path)
         print("Finished loading point cloud")
         
-
         self.total_time = 16
 
         if self.move:
@@ -693,7 +691,6 @@ class PointCloud1(Dataset):
                     line = " ".join(map(str, point))
                     f.write(f"{line}\n")
 
-            
 
         else:
             print("top!!!!!")
@@ -702,6 +699,7 @@ class PointCloud1(Dataset):
             )
             self.coords = point_cloud[:, :3]
             self.occupancies = point_cloud[:, 3]
+            self.labels = point_cloud[:, 4]
 
         if cfg.shape_modify == "half":
             included_points = self.coords[:, 0] < 0
@@ -868,6 +866,59 @@ class PointCloud(Dataset):
         return {"coords": torch.from_numpy(coords).float()}, {
             "sdf": torch.from_numpy(occs).float()
         }
+
+class PointCloud_with_semantic(PointCloud):
+    def __init__(
+        self,
+        path,
+        on_surface_points,
+        is_mesh=True,
+        output_type="occ",
+        out_act="sigmoid",
+        n_points=200000,
+        cfg=None,
+    ):
+        super(PointCloud_with_semantic.__bases__[0], self).__init__()
+        self.output_type = output_type
+        self.out_act = out_act
+        self.cfg = cfg
+        self.on_surface_points = on_surface_points
+        self.coords = None
+        self.occupancies = None
+        self.labels = None
+
+        if path.endswith(".npy"):
+            print(f"🔹 Loading point cloud from NPY: {path}")
+            data = np.load(path)
+            self.coords = data[:, :3]
+            if data.shape[1] > 3:
+                self.occupancies = data[:, 3].reshape(-1, 1)
+            else:
+                raise ValueError("Expected at least 4 columns in .npy file")
+            if data.shape[1] > 4:
+                self.labels = data[:, 4].reshape(-1, 1)
+            else:
+                raise ValueError("The data doesn't include the part label")
+        else:
+            # Assume PartNet format with 'objs' subfolder
+            obj_dir = os.path.join(path, "objs")
+            if not os.path.exists(obj_dir):
+                raise FileNotFoundError(f"No 'objs' folder found in: {path}")
+
+            print(f"🔹 Merging .obj parts from {obj_dir}")
+            mesh = self.merge_parts(obj_dir)
+            points, occupancies = self.sample_and_label(mesh, n_points)
+            self.coords = points
+            self.occupancies = occupancies.reshape(-1, 1)
+
+    def __getitem__(self, idx):
+        ixs = np.random.choice(self.coords.shape[0], size=self.on_surface_points, replace=False)
+        coords = self.coords[ixs]
+        occs = self.occupancies[ixs]
+        labels = self.labels[ixs]
+        return {"coords": torch.from_numpy(coords).float()}, {
+            "sdf": torch.from_numpy(occs).float(),
+                "labels": torch.from_numpy(labels).float()}
 
 class Video(Dataset):
     def __init__(self, path_to_video):
