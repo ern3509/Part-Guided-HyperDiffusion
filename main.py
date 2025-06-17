@@ -29,7 +29,7 @@ sys.path.append("siren")
 @hydra.main(
     version_base=None,
     config_path="configs/diffusion_configs",
-    config_name="train_plane",
+    config_name="train_knife",
 )
 def main(cfg: DictConfig):
     Config.config = config = cfg
@@ -60,6 +60,7 @@ def main(cfg: DictConfig):
     mlps_folder_train = Config.get("mlps_folder_train")
 
     # Initialize Transformer for HyperDiffusion
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if "hyper" in method:
         mlp = get_mlp(mlp_kwargs)
         state_dict = mlp.state_dict()
@@ -71,7 +72,7 @@ def main(cfg: DictConfig):
             layer_names.append(l)
         model = Transformer(
             layers, layer_names, **Config.config["transformer_config"]["params"]
-        ).cuda()
+        ).to(device)
     # Initialize UNet for Voxel baseline
     else:
         model = ldm.ldm.modules.diffusionmodules.openaimodel.UNetModel(
@@ -251,8 +252,10 @@ def main(cfg: DictConfig):
 
     lr_monitor = pl.callbacks.LearningRateMonitor(logging_interval="epoch")
     trainer = pl.Trainer(
-        accelerator="gpu",
-        devices=torch.cuda.device_count(),
+        #accelerator="gpu",
+        #devices=torch.cuda.device_count(),
+        accelerator = "cpu",
+        devices=1,
         max_epochs=Config.get("epochs"),
         strategy="ddp",
         logger=wandb_logger,

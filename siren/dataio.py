@@ -18,7 +18,7 @@ from PIL import Image
 from torch.utils.data import Dataset
 from torchvision.transforms import Compose, Normalize, Resize, ToTensor
 from trimesh.proximity import signed_distance
-from experiment_scripts import creating_pointclouds
+from siren.experiment_scripts import creating_pointclouds
 
 
 def anime_read(filename):
