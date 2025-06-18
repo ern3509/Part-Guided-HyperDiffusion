@@ -386,7 +386,7 @@ def train(
                     for part_id in range(cfg.multi_process.n_of_parts):
                         part_loss = losses[f"block_{part_id}"]
                         optim.zero_grad()
-                        part_loss.backward(retain_graph=True)  # retain_graph to allow reuse
+                        part_loss.backward()  # retain_graph to allow reuse
                         train_loss += part_loss.item()
                         #train_loss.backward()
                     total_loss += train_loss
