@@ -377,7 +377,6 @@ def occ_sigmoid_semantic(model_output, gt, model, cfg=None, first_state_dict=Non
     gt_one_hot = to_one_hot(gt_label, num_classes=n_parts)
     # Classification loss: each block learns to predict 1 if point belongs to it, 0 otherwise
     cls_loss_all = F.binary_cross_entropy_with_logits(pred_label, gt_one_hot, reduction='none')  # [B, n_parts]
-    print(cls_loss_all.shape)
     for part_id in range(n_parts):
         cls_loss_part = cls_loss_all[:, part_id].mean()
         losses[f'block_{part_id}'] = semantic_effort * cls_loss_part + occ_loss  # you can scale this if needed
