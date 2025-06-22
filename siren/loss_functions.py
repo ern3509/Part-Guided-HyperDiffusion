@@ -361,13 +361,15 @@ def occ_sigmoid_semantic(model_output, gt, model, cfg=None, first_state_dict=Non
     pred_sdf = model_output["model_out"]
     pred_label = model_output["part_classification"]
     gt_label = gt["labels"].squeeze(0)
-    semantic_effort = 0.5
+
+    semantic_effort = 0 # 0.5
     #pos_weight = torch.tensor(10.0).to(pred_sdf.device)
     occ_loss = F.binary_cross_entropy_with_logits(
         pred_sdf.squeeze(-1), gt_sdf.squeeze(-1), reduction="none"
     )   
     losses = {}
     n_parts = cfg.multi_process.n_of_parts
+    
     # Occupancy loss (shared)
     occ_loss = F.binary_cross_entropy_with_logits(pred_sdf, gt_sdf)
     losses['occupancy'] = occ_loss
@@ -377,9 +379,9 @@ def occ_sigmoid_semantic(model_output, gt, model, cfg=None, first_state_dict=Non
     gt_one_hot = to_one_hot(gt_label, num_classes=n_parts)
     # Classification loss: each block learns to predict 1 if point belongs to it, 0 otherwise
     cls_loss_all = F.binary_cross_entropy_with_logits(pred_label, gt_one_hot, reduction='none')  # [B, n_parts]
-    print(cls_loss_all.shape)
+    #print(cls_loss_all.shape)
     for part_id in range(n_parts):
-        cls_loss_part = cls_loss_all[:, part_id].mean()
+        cls_loss_part = cls_loss_all[:, part_id].mean() 
         losses[f'block_{part_id}'] = semantic_effort * cls_loss_part + occ_loss  # you can scale this if needed
     #print(losses.items())
     return losses
@@ -400,6 +402,9 @@ def to_one_hot(indices, num_classes):
     indices = indices.squeeze(axis=-1)
     indices = np.asarray(indices).astype(int)
     one_hot = np.zeros((indices.size, num_classes), dtype=np.float32)
+    
+   # print("Max index:", indices.max(), "Num classes:", num_classes)
+
     # Mask for valid indices (not -1)
     valid_mask = indices != -1
     valid_indices = indices[valid_mask]

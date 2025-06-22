@@ -62,15 +62,16 @@ def sample_points_per_part(output_dir, obj_dir, total_points=30000, noise_std=0.
     point_list = []
     label_list = []
     occupancy_list = []
+
     part_files = sorted([f for f in os.listdir(obj_dir) if f.endswith(".obj")])
     n_parts = len(part_files)
     points_per_part = total_points // n_parts
 
+    per_part_counts = {}
     for label, file in enumerate(part_files):
         mesh = trimesh.load(os.path.join(obj_dir, file), force='mesh')
         if mesh.is_empty:
             continue
-       # mesh = normalize_and_center_mesh(mesh)
 
         n_surface = points_per_part // 3
         n_near = n_surface
@@ -79,71 +80,98 @@ def sample_points_per_part(output_dir, obj_dir, total_points=30000, noise_std=0.
         surface = mesh.sample(n_surface)
         near_surface = surface + noise_std * np.random.randn(*surface.shape)
         far = np.random.uniform(-0.5, 0.5, size=(n_far, 3))
-        all_points = np.vstack([surface, near_surface, far])
 
-        wn = igl.winding_number(mesh.vertices, mesh.faces, all_points)
-        occ = (wn >= 0.5).astype(np.float32)
+        # Compute winding number for near-surface
+        wn_near = igl.winding_number(mesh.vertices, mesh.faces, near_surface)
+        inside_near = near_surface[wn_near >= 0.5]
+        outside_near = near_surface[wn_near < 0.5]
+        occ_inside_near = np.ones(len(inside_near), dtype=np.float32)
+        occ_outside_near = np.zeros(len(outside_near), dtype=np.float32)
 
-        labeled_points = all_points[occ == 1]
-        occ = occ[occ == 1]
-        labels = np.full((labeled_points.shape[0],), label)
-        point_list.append(labeled_points)
-        label_list.append(labels)
-        occupancy_list.append(occ)
-        print(f"length of occ: {len(occupancy_list)} /n length of points: {len(point_list)}")
-        #labels = np.full((labeled_points.shape[0],), label)
-        #point_list.append(labeled_points)
-        #label_list.append(labels)
+        # Compute winding number for far points
+        wn_far = igl.winding_number(mesh.vertices, mesh.faces, far)
+        occ_far = (wn_far >= 0.5).astype(np.float32)
+        far_inside = far[occ_far == 1]
+        far_outside = far[occ_far == 0]
+
+        # Assemble all
+        labeled_inside = np.vstack([surface, inside_near, far_inside])
+        occ_inside = np.ones(len(labeled_inside), dtype=np.float32)
+        labels_inside = np.full((len(labeled_inside),), label)
+
+        labeled_outside = np.vstack([outside_near, far_outside])
+        occ_outside = np.zeros(len(labeled_outside), dtype=np.float32)
+        labels_outside = np.full((len(labeled_outside),), -1)
+
+        part_points = np.vstack([labeled_inside, labeled_outside])
+        part_occ = np.concatenate([occ_inside, occ_outside])
+        part_labels = np.concatenate([labels_inside, labels_outside])
+
+        # Save per-part stats
+        per_part_counts[label] = {
+            "inside": len(labeled_inside),
+            "outside": len(labeled_outside),
+        }
+
+        # Save to file
         output_path = os.path.join(output_dir, f"{file}.npy")
-        np.save(output_path, np.hstack([labeled_points, occ.reshape(-1, 1), labels.reshape(-1, 1)]))
+        np.save(output_path, np.hstack([part_points, part_occ[:, None], part_labels[:, None]]))
+
+        point_list.append(part_points)
+        occupancy_list.append(part_occ)
+        label_list.append(part_labels)
 
     if not point_list:
         raise RuntimeError(f"No valid meshes in {obj_dir}")
-    
-    return np.vstack(point_list), np.concatenate(occupancy_list),np.concatenate(label_list)
+
+    print("=== Per-Part Stats ===")
+    for label, stats in per_part_counts.items():
+        total = stats["inside"] + stats["outside"]
+        print(f"Part {label}: {stats['inside']} inside ({stats['inside']/total:.2%}), {stats['outside']} outside ({stats['outside']/total:.2%})")
+
+    return np.vstack(point_list), np.concatenate(occupancy_list), np.concatenate(label_list)
+
 
 
 def process_shape(root_dir, shape_id, output_dir, num_surface=5000, num_random=5000, noise_std=0.01):
     obj_dir = os.path.join(root_dir, shape_id, "objs")
-    nb_parts = len(os.listdir(obj_dir))
     if not os.path.exists(obj_dir):
         print(f"❌ No 'objs/' folder in {shape_id}, skipping.")
         return 0
+
+    nb_parts = len(os.listdir(obj_dir))
     print(f"Processing {shape_id} with {nb_parts} parts")
     try:
-        pc, occupancies, part_labels_surface  = sample_points_per_part(output_dir, obj_dir, total_points=num_surface, noise_std=noise_std)
+        pc, occupancies, part_labels_surface = sample_points_per_part(output_dir, obj_dir, total_points=num_surface, noise_std=noise_std)
 
+        # Load & simplify full mesh
         merged_mesh = trimesh.util.concatenate(
             [trimesh.load(os.path.join(obj_dir, f), force='mesh') for f in os.listdir(obj_dir) if f.endswith(".obj")]
         )
         merged_mesh = simplify_trimesh(merged_mesh, target_faces=10000)
+
     except Exception as e:
         print(f"❌ Failed processing mesh for {shape_id}: {e}")
         return 0
 
-    # Random space samples
+    # Random background points for additional contrast (optional)
     pc_random = np.random.uniform(low=-1, high=1, size=(num_random, 3))
     part_labels_random = np.full((num_random,), -1)
-    occ_random = np.full((num_random), 0)
+    occ_random = np.zeros(num_random, dtype=np.float32)
 
-    # Combine and compute SDF
-    
+    # Combine everything
     points = np.vstack([pc, pc_random])
-    
+    occupancies = np.concatenate([occupancies, occ_random])
     part_labels = np.concatenate([part_labels_surface, part_labels_random])
 
-    occupancies = np.concatenate([occupancies, occ_random])
-    ''''
-    print(f"Computing SDF for {shape_id}")
-    sdf = compute_sdf(points, merged_mesh)
-    print(f"Computed SDF for {shape_id}")
-    os.makedirs(output_dir, exist_ok=True)
-    
-    np.save(output_path, np.hstack([points, sdf.reshape(-1, 1), part_labels.reshape(-1, 1)]))
-    '''
+    # Save
     output_path = os.path.join(output_dir, f"{shape_id}.npy")
-    print(f"here is the shape of occupancies {occupancies.shape}, /nlabel {part_labels.shape}")
-    np.save(output_path, np.hstack([points, occupancies.reshape(-1, 1), part_labels.reshape(-1, 1)]))
+    np.save(output_path, np.hstack([points, occupancies[:, None], part_labels[:, None]]))
+
+    # Global stats
+    n_in = np.sum(occupancies == 1)
+    n_out = np.sum(occupancies == 0)
+    print(f"[{shape_id}] Inside: {n_in} ({n_in / len(occupancies):.2%}) | Outside: {n_out} ({n_out / len(occupancies):.2%})")
     print(f"✅ Saved: {output_path}")
     return 1
 
