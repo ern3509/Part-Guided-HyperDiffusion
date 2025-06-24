@@ -26,6 +26,22 @@ def simplify_trimesh(tri_mesh, target_faces=50000):
     simplified.remove_unreferenced_vertices()
     return trimesh.Trimesh(vertices=np.asarray(simplified.vertices), faces=np.asarray(simplified.triangles))
 
+def repair_mesh(mesh):
+    from hole_filling import triangulate_refine_fair
+    vs = np.asarray(mesh.vertices, dtype=np.float64)
+    fs = np.asarray(mesh.faces, dtype=np.int32)
+
+    try:
+        out_vs, out_fs = triangulate_refine_fair(vs, fs)
+        repaired = trimesh.Trimesh(vertices=out_vs, faces=out_fs, process=False)
+        repaired.remove_unreferenced_vertices()
+        return repaired
+    except Exception as e:
+        print(f"❌ Failed hole filling: {e}")
+        return mesh  # fallback to original
+
+
+
 def sample_global_points(mesh, total=30000, noise_std=0.01):
     n_surface = total // 3
     n_near = total // 3
@@ -40,6 +56,9 @@ def load_part_meshes(obj_dir):
     for file in sorted(os.listdir(obj_dir)):
         if file.endswith(".obj"):
             mesh = trimesh.load(os.path.join(obj_dir, file), force='mesh')
+            if not mesh.is_watertight and mesh.volume > 1e-6:
+                mesh = repair_mesh(mesh)
+
             if not mesh.is_empty:
                 meshes.append(mesh)
     return meshes
@@ -50,12 +69,12 @@ def assign_part_labels(points, part_meshes, occupancy):
         wn = igl.winding_number(mesh.vertices, mesh.faces, points)
         occupancy_mask = occupancy == 1  # convert float array to boolean
         mask = (wn >= 0.5) & (labels == -1) & occupancy_mask
-        labels[mask] = pid
+        labels[mask] = -1 # pid
         print(f"Assigned {mask.sum()} points to part {pid}")
         print(f"Part {pid} volume: {mesh.volume:.4f}")
     return labels
 
-def process_shape(root_dir, shape_id, output_dir, num_points=100000, noise_std=0.01):
+def process_shape(root_dir, shape_id, output_dir, num_points=5000, noise_std=0.01):
     obj_dir = os.path.join(root_dir, shape_id, "objs")
     if not os.path.exists(obj_dir):
         print(f"❌ Missing 'objs/' folder for {shape_id}, skipping.")
@@ -71,7 +90,7 @@ def process_shape(root_dir, shape_id, output_dir, num_points=100000, noise_std=0
         merged_mesh = simplify_trimesh(merged_mesh, target_faces=50000)
         merged_mesh = normalize_and_center_mesh(merged_mesh)
 
-        # Sample points so that each part is rightly represented
+        # Sample points so that each part is rightly represented, proportional 
         points = sample_global_points(merged_mesh, total=num_points, noise_std=noise_std)
         occupancy = (igl.winding_number(merged_mesh.vertices, merged_mesh.faces, points) >= 0.5).astype(np.float32)
         print(f" Inside: {(occupancy == 1).sum()}, Outside: {(occupancy == 0).sum()}")
