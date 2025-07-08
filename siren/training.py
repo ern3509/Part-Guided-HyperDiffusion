@@ -243,7 +243,7 @@ def train1(
         # np.savetxt(os.path.join(checkpoints_dir, 'train_losses_final.txt'),
         #            np.array(train_losses))
 
-def train(
+def train1_mask_model(
     model,
     train_dataloader,
     epochs,
@@ -494,3 +494,173 @@ class LinearDecaySchedule:
         return self.start_val + (self.final_val - self.start_val) * min(
             iter / self.num_steps, 1.0
         )
+
+
+def train(
+    model,
+    train_dataloader,
+    epochs,
+    lr,
+    steps_til_summary,
+    epochs_til_checkpoint,
+    model_dir,
+    loss_fn,
+    summary_fn,
+    wandb,
+    val_dataloader=None,
+    double_precision=False,
+    clip_grad=False,
+    use_lbfgs=False,
+    loss_schedules=None,
+    filename=None,
+    cfg=None,
+):
+    os.makedirs(model_dir, exist_ok=True)
+    checkpoints_dir = model_dir
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    optim = torch.optim.Adam(lr=lr, params=model.parameters())
+    if cfg.scheduler.type == "step":
+        scheduler = StepLR(
+            optim,
+            step_size=cfg.scheduler.step_size,
+            gamma=cfg.scheduler.gamma,
+            verbose=True,
+        )
+    elif cfg.scheduler.type == "adaptive":
+        scheduler = ReduceLROnPlateau(
+            optim,
+            patience=cfg.scheduler.patience_adaptive,
+            factor=cfg.scheduler.factor,
+          #  verbose=True,
+            threshold=cfg.scheduler.threshold,
+            min_lr=cfg.scheduler.min_lr,
+        )
+
+    # copy settings from Raissi et al. (2019) and here
+    #
+    total_steps = 0
+    best_loss = float("inf")
+    patience = cfg.scheduler.patience
+    num_bad_epochs = 0
+
+    with tqdm(total=len(train_dataloader) * epochs) as pbar:
+        train_losses = []
+        for epoch in range(epochs):
+            total_loss, total_items = 0, 0
+
+            for step, (model_input, gt) in enumerate(train_dataloader):
+                start_time = time.time()
+
+                model_input = {key: value.to(device) for key, value in model_input.items()}
+                gt = {key: value.to(device) for key, value in gt.items()}
+
+                # 2. Forward pass
+                optim.zero_grad()
+                model_output = model(model_input)
+                
+                # 3. Compute losses
+                loss_dict = loss_fn(
+                    model_output=model_output,
+                    gt=gt,
+                    model=model,
+                    cfg=cfg
+                )
+                
+                # 4. Backward pass
+                loss = loss_dict['total']
+                loss.backward()
+                
+                # 5. Gradient clipping (optional)
+                #if cfg.training.grad_clip:
+                #    torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.training.grad_clip)
+                
+                # 6. Optimizer step
+                optim.step()
+                
+                # 7. Update metrics
+                total_loss += loss.item()
+                total_items += len(model_output)
+
+                #wandbloggin
+                for part_id in range(cfg.multi_process.n_of_parts):
+                    wandb.log({
+                        f"loss{part_id}": loss_dict[f"block_{part_id}"].item(),
+                    })
+                wandb.log({"loss": loss.item()})
+
+                pbar.update(1)
+                # wandb.log({"loss": train_loss})
+                pbar.set_description(
+                    "Epoch %d, Total loss %0.6f, iteration time %0.6f"
+                    % (epoch, loss.item(), time.time() - start_time)
+                )
+
+
+            if val_dataloader is not None:
+                    print("Running validation set...")
+                    model.eval()
+                    with torch.no_grad():
+                        val_losses = []
+                        for model_input, gt in val_dataloader:
+                            model_output = model(model_input)
+                            val_loss = loss_fn(model_output, gt)
+                            val_losses.append(val_loss)
+
+                        # writer.add_scalar("val_loss", np.mean(val_losses), total_steps)
+                        wandb.log({"val_loss": np.mean(val_losses)})
+                    model.train()
+            total_steps += 1
+            epoch_loss = total_loss / total_items
+            if cfg.scheduler.type == "adaptive":
+                prev_bad_epochs = scheduler.num_bad_epochs
+                prev_best = scheduler.best
+                prev_lr = next(iter(optim.param_groups))["lr"]
+                scheduler.step(epoch_loss)
+                curr_bad_epochs = scheduler.num_bad_epochs
+                new_lr = next(iter(optim.param_groups))["lr"]
+                new_best = scheduler.best
+            elif cfg.scheduler.type == "step":
+                scheduler.step()
+            else:
+                None
+            if best_loss > epoch_loss:
+                best_loss = epoch_loss
+                num_bad_epochs = 0
+            else:
+                num_bad_epochs += 1
+            #optim.param_groups[0]["lr"] = max(
+            #    optim.param_groups[0]["lr"], cfg.scheduler.min_lr
+            #)
+
+            if cfg.strategy == "continue":
+                torch.save(
+                    model.state_dict(),
+                    os.path.join(
+                        checkpoints_dir, f"{filename}_model_final_{epoch}.pth"
+                    ),
+                )
+
+
+            epoch_loss = total_loss / total_items
+
+            wandb.log({
+                "epoch_loss": epoch_loss,
+                "lr": optim.param_groups[0]["lr"],
+                "epoch": epoch,
+            })
+
+        if not cfg.mlp_config.move:
+            summary_fn(
+                "audio_samples",
+                model,
+                model_input,
+                gt,
+                model_output,
+                wandb,
+                total_steps,
+            )
+        if cfg.strategy != "continue":
+            torch.save(
+                model.state_dict(),
+                os.path.join(checkpoints_dir, f"{filename}_model_final.pth"),
+            )

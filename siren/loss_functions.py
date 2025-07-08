@@ -362,7 +362,7 @@ def occ_sigmoid_semantic(model_output, gt, model, cfg=None, first_state_dict=Non
     pred_label = model_output["part_classification"]
     gt_label = gt["labels"].squeeze(0)
 
-    semantic_effort = 0 # 0.5
+    semantic_effort = 0.3 # 0.5
     #pos_weight = torch.tensor(10.0).to(pred_sdf.device)
     occ_loss = F.binary_cross_entropy_with_logits(
         pred_sdf.squeeze(-1), gt_sdf.squeeze(-1), reduction="none"
@@ -380,9 +380,13 @@ def occ_sigmoid_semantic(model_output, gt, model, cfg=None, first_state_dict=Non
     # Classification loss: each block learns to predict 1 if point belongs to it, 0 otherwise
     cls_loss_all = F.binary_cross_entropy_with_logits(pred_label, gt_one_hot, reduction='none')  # [B, n_parts]
     #print(cls_loss_all.shape)
+    mean_cls_loss = cls_loss_all.mean()
+    losses['semantic_mean'] = mean_cls_loss
     for part_id in range(n_parts):
         cls_loss_part = cls_loss_all[:, part_id].mean() 
         losses[f'block_{part_id}'] = semantic_effort * cls_loss_part + occ_loss  # you can scale this if needed
+
+    losses['total'] = semantic_effort * mean_cls_loss + occ_loss
     #print(losses.items())
     return losses
 

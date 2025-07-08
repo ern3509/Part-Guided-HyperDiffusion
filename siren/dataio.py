@@ -890,6 +890,8 @@ class PointCloud_with_semantic(PointCloud):
         if path.endswith(".npy"):
             print(f"🔹 Loading point cloud from NPY: {path}")
             data = np.load(path)
+
+            
             self.coords = data[:, :3]
             if data.shape[1] > 3:
                 self.occupancies = data[:, 3].reshape(-1, 1)

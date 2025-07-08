@@ -788,7 +788,7 @@ class GaussianDiffusion:
             model_output = model(x_t, self._scale_timesteps(t), **model_kwargs)
 
             if self.model_var_type in [
-                ModelVarType.LEARNED,
+                ModelVarType.LEARNED,  #Erwan
                 ModelVarType.LEARNED_RANGE,
             ]:
                 B, C = x_t.shape[:2]

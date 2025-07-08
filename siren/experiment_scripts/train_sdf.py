@@ -135,7 +135,7 @@ def main(cfg: DictConfig):
                 loss_fn = (
                     loss_functions.occ_tanh
                     if cfg.out_act == "tanh"
-                    else loss_functions.occ_sigmoid_semantic
+                    else loss_functions.occ_sigmoid_semantic #_semantic
                 )
             loss_fn = partial(loss_fn, cfg=cfg)
             summary_fn = utils.wandb_sdf_summary

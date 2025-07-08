@@ -69,11 +69,20 @@ def assign_part_labels(points, part_meshes, occupancy):
         wn = igl.winding_number(mesh.vertices, mesh.faces, points)
         occupancy_mask = occupancy == 1  # convert float array to boolean
         mask = (wn >= 0.5) & (labels == -1) & occupancy_mask
-        labels[mask] = -1 # pid
+        labels[mask] = pid # pid
         print(f"Assigned {mask.sum()} points to part {pid}")
         print(f"Part {pid} volume: {mesh.volume:.4f}")
     return labels
 
+def sample_local_points(mesh, total, noise_std):
+    n_surface = 2*total // 5
+    n_near = 2*total // 5
+    n_far = total - n_surface - n_near
+    surface = mesh.sample(n_surface)
+    near_surface = surface + noise_std * np.random.randn(*surface.shape)
+    far = np.random.uniform(-0.5, 0.5, size=(n_far, 3))
+    return np.vstack([surface, near_surface, far])
+    
 def process_shape(root_dir, shape_id, output_dir, num_points=5000, noise_std=0.01):
     obj_dir = os.path.join(root_dir, shape_id, "objs")
     if not os.path.exists(obj_dir):
@@ -88,10 +97,14 @@ def process_shape(root_dir, shape_id, output_dir, num_points=5000, noise_std=0.0
 
         merged_mesh = trimesh.util.concatenate(part_meshes)
         merged_mesh = simplify_trimesh(merged_mesh, target_faces=50000)
-        merged_mesh = normalize_and_center_mesh(merged_mesh)
+        #merged_mesh = normalize_and_center_mesh(merged_mesh)
 
         # Sample points so that each part is rightly represented, proportional 
-        points = sample_global_points(merged_mesh, total=num_points, noise_std=noise_std)
+        #points = sample_global_points(merged_mesh, total=num_points, noise_std=noise_std)
+        points = []
+        for part_mesh in part_meshes:
+            points.append(sample_local_points(part_mesh, total=num_points, noise_std=noise_std))
+        points = np.vstack(points)
         occupancy = (igl.winding_number(merged_mesh.vertices, merged_mesh.faces, points) >= 0.5).astype(np.float32)
         print(f" Inside: {(occupancy == 1).sum()}, Outside: {(occupancy == 0).sum()}")
         labels = assign_part_labels(points, part_meshes, occupancy)

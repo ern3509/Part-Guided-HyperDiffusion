@@ -4,6 +4,8 @@ import scipy
 import scipy.sparse
 import scipy.sparse.linalg
 from typing import List, Tuple
+import numpy as np
+import networkx as nx
 
 _epsilon = 1e-16
 
@@ -80,6 +82,7 @@ def close_hole(vs: np.ndarray, fs: np.ndarray, hole_vids, fast=True) -> np.ndarr
     return out_fs
 
 
+
 def close_holes(vs: np.ndarray, fs: np.ndarray, hole_len_thr: float = 10000., fast=True) -> np.ndarray:
     """
     Close holes whose length is less than a given threshold.
@@ -90,6 +93,7 @@ def close_holes(vs: np.ndarray, fs: np.ndarray, hole_len_thr: float = 10000., fa
     out_fs = fs.copy()
     while True:
         updated = False
+        print(f"Current number of faces: {len(out_fs)}")
         for b in igl.all_boundary_loop(out_fs):
             hole_edge_len = np.linalg.norm(vs[np.roll(b, -1)] - vs[b], axis=1).sum()
             if len(b) >= 3 and hole_edge_len <= hole_len_thr:

@@ -250,7 +250,7 @@ def main(cfg: DictConfig):
     )
 
     lr_monitor = pl.callbacks.LearningRateMonitor(logging_interval="epoch")
-    trainer = pl.Trainer(
+    trainer = pl.Trainer(#Erwan
         accelerator="gpu",
         devices=torch.cuda.device_count(),
         max_epochs=Config.get("epochs"),
