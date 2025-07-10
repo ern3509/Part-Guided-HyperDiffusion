@@ -1,12 +1,12 @@
 input_type: "mesh"
 output_type: "occ" # or sdf or occ
 in_out: True
-augment_on_the_fly: False
+augment_on_the_fly: False0
 mesh_jitter: False
 dataset_folder: "./data/knife_preprocessed_split" #02691156"
 wandb_dir: .
 batch_size: 2048
-lr: 1e-3 #2
+lr: 1e-2 #2
 model_type: mlp_3d 
 bayesian: False
 logging_root: './logs'

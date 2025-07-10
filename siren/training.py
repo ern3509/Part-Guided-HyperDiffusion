@@ -243,7 +243,7 @@ def train1(
         # np.savetxt(os.path.join(checkpoints_dir, 'train_losses_final.txt'),
         #            np.array(train_losses))
 
-def train1_mask_model(
+def train( #1_mask_model
     model,
     train_dataloader,
     epochs,
@@ -496,7 +496,7 @@ class LinearDecaySchedule:
         )
 
 
-def train(
+def train_simplepart_diffusion( #simple part guided diffusion
     model,
     train_dataloader,
     epochs,

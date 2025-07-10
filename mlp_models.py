@@ -8,7 +8,7 @@ from torch import nn
 
 from embedder import Embedder
 
-
+#remove the part loss and change part layer to modullist to register it
 class MLP(nn.Module):
     def __init__(
         self,
@@ -204,7 +204,7 @@ class ClassMaskCreator:
         return self.class_masks[class_id]
 
 
-class MLP3D1(nn.Module):
+class MLP3D(nn.Module):
     def __init__(
         self,
         n_of_parts,
@@ -229,12 +229,18 @@ class MLP3D1(nn.Module):
         )
         self.semantic = semantic
         self.n_of_parts = n_of_parts
-        self.layers = nn.ModuleList([])
+        self.layers = nn.ModuleList([
+            nn.Linear(self.embedder.out_dim, hidden_neurons[0], bias=use_bias),
+            *[
+                nn.Linear(hidden_neurons[i], hidden_neurons[i + 1], bias=use_bias)
+                for i in range(len(hidden_neurons) - 1)
+            ],
+        ])
         self.output_type = output_type
         self.use_leaky_relu = use_leaky_relu
         in_size = self.embedder.out_dim
-        self.layers.append(nn.Linear(in_size, hidden_neurons[0], bias=use_bias))
-        self.layer_parts = []
+        #self.layers.append(nn.Linear(in_size, hidden_neurons[0], bias=use_bias))
+        # self.layer_parts = []
         self.part_dim = hidden_neurons[0] // self.n_of_parts  #num of neurons per part
         
         ''''
@@ -244,11 +250,11 @@ class MLP3D1(nn.Module):
         ])
         '''
         
-        for i, h_dim in enumerate(hidden_neurons[:-1]):
-            # Split neurons evenly (adjust if uneven division)
-            layer_part = nn.Linear(in_size, h_dim)
-            self.layer_parts.append(layer_part)
-            in_size = h_dim  # Concatenated output becomes next input
+        # for i, h_dim in enumerate(hidden_neurons[:-1]):
+        #     # Split neurons evenly (adjust if uneven division)
+        #     layer_part = nn.Linear(in_size, h_dim)
+        #     self.layer_parts.append(layer_part)
+        #     in_size = h_dim  # Concatenated output becomes next input
         
             # Occupancy head (operates on full concatenated features)
         self.occ_head = nn.Linear(hidden_neurons[-1], out_size)
@@ -266,22 +272,22 @@ class MLP3D1(nn.Module):
         part_features = []
         masks = ClassMaskCreator(self, n_classes=self.n_of_parts)
 
-        x = self.layer_parts[0](x)
+        x = self.layers[0](x)
         part_outputs = []
-        for i, layer_part in enumerate(self.layer_parts[1:]):
+        temporal_part_output = []
+        for i, layer_part in enumerate(self.layers[1:]):
             # Process each part's neurons independently
             x_occ = layer_part(x)  # Process through part-specific weights
             x_occ = F.leaky_relu(x_occ) if self.use_leaky_relu else F.relu(x_occ)
-            temporal_part_output = []
             for part_id in range(self.n_of_parts): 
-                x_part = part_outputs[part_id] if i > 0 else x
+                x_part = temporal_part_output[i * part_id] if i > 0 else x #part_outputs[part_id] if i > 0 else x
                 x_part = layer_part(x_part * masks.get_mask(part_id))
                 x_part = F.leaky_relu(x_part) if self.use_leaky_relu else F.relu(x_part)
                 temporal_part_output.append(x_part)
             part_outputs = temporal_part_output
             # Store last layer's part features for classification
 
-            if i == len(self.layer_parts) - 2:
+            if i == len(self.layers) - 2:
                 part_features = part_outputs  # List of [B, part_dim] tensors
         
         # Occupancy output (full concatenated features)
@@ -349,7 +355,7 @@ class MLP3D1(nn.Module):
         return self.class_masks[class_id]
     
 
-class MLP3D(nn.Module):
+class MLP3D_simple_partguided(nn.Module):
     def __init__(
         self,
         n_of_parts=4,  # 4 input layers
