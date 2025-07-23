@@ -17,7 +17,8 @@ import trimesh
 from PIL import Image
 from torch.utils.data import Dataset
 from torchvision.transforms import Compose, Normalize, Resize, ToTensor
-
+from trimesh.proximity import signed_distance
+from siren.experiment_scripts import creating_pointclouds
 
 def anime_read(filename):
     f = open(filename, "rb")
@@ -491,7 +492,7 @@ class PointCloud(Dataset):
         is_mesh=True,
         output_type="occ",
         out_act="sigmoid",
-        n_points=200000,
+        n_points=20000,
         cfg=None,
     ):
         super().__init__()
@@ -502,9 +503,30 @@ class PointCloud(Dataset):
         self.faces = None
         self.move = cfg.mlp_config.move
         self.cfg = cfg
+
+        if not cfg.in_out:
+                pc_folder = os.path.dirname(path) + "_" + str(cfg.n_points) + "_pc"
+        else:
+            pc_folder = (
+            os.path.dirname(path)
+            + "_"
+            + str(cfg.n_points)
+            + "_pc_"
+            + f"{self.output_type}_in_out_{str(cfg.in_out)}"
+        )
+
         if is_mesh:
             if cfg.strategy == "save_pc":
+
+
+
                 obj: trimesh.Trimesh = trimesh.load(path)
+
+                obj = creating_pointclouds.simplify_trimesh(obj)
+                
+                #check if the object is watertight, if not repair object
+                #obj = self.repair(obj)
+                
                 vertices = obj.vertices
                 vertices -= np.mean(vertices, axis=0, keepdims=True)
                 v_max = np.amax(vertices)
@@ -512,6 +534,8 @@ class PointCloud(Dataset):
                 vertices *= 0.5 * 0.95 / (max(abs(v_min), abs(v_max)))
                 obj.vertices = vertices
                 self.obj = obj
+                
+
                 total_points = cfg.n_points  # 100000
                 n_points_uniform = total_points  # int(total_points * 0.5)
                 n_points_surface = total_points  # total_points
@@ -520,38 +544,41 @@ class PointCloud(Dataset):
                     -0.5, 0.5, size=(n_points_uniform, 3)
                 )
                 points_surface = obj.sample(n_points_surface)
-                points_surface += 0.01 * np.random.randn(n_points_surface, 3)
-                points = np.concatenate([points_surface, points_uniform], axis=0)
-
-                inside_surface_values = igl.fast_winding_number_for_meshes(
-                    obj.vertices, obj.faces, points
+                
+                near_surface = points_surface + 0.01 * np.random.randn(*points_surface.shape)
+                points = np.concatenate([points_surface, points_uniform, near_surface], axis=0)
+                #print("test")
+                
+                #Documenatation: Determine if a point is inside or outside the mesh surface, change fast winding with classic winding
+                inside_surface_values = igl.winding_number(
+                    np.array(obj.vertices), np.array(obj.faces), points
                 )
+                sign_inside_surface_values = signed_distance(obj, points)
+                print(f"max : {max(inside_surface_values)} /n min: {min(inside_surface_values)} /n mean: {np.average(inside_surface_values)}")
+                print(f"max_si : {max(sign_inside_surface_values)} /n min_si: {min(sign_inside_surface_values)} /n mean_si: {np.average(sign_inside_surface_values)}")
+ 
                 thresh = 0.5
+                #Documentation: Here the distance value of each point relative to the mesh surface ist replace with a boolean value(in or out)
                 occupancies_winding = np.piecewise(
                     inside_surface_values,
                     [inside_surface_values < thresh, inside_surface_values >= thresh],
                     [0, 1],
                 )
+                
                 occupancies = occupancies_winding[..., None]
                 print(points.shape, occupancies.shape, occupancies.sum())
                 point_cloud = points
                 point_cloud = np.hstack((point_cloud, occupancies))
+                
                 print(point_cloud.shape, points.shape, occupancies.shape)
-
+                distances = inside_surface_values[..., None]
+                point_cloud_with_distance = np.hstack((points, distances))
+                
         else:
             point_cloud = np.genfromtxt(path)
+            #point_cloud = np.load(path)
         print("Finished loading point cloud")
-        if not cfg.in_out:
-            pc_folder = os.path.dirname(path) + "_" + str(cfg.n_points) + "_pc"
-        else:
-            pc_folder = (
-                os.path.dirname(path)
-                + "_"
-                + str(cfg.n_points)
-                + "_pc_"
-                + f"{self.output_type}_in_out_{str(cfg.in_out)}"
-            )
-
+        
         self.total_time = 16
 
         if self.move:
@@ -600,6 +627,9 @@ class PointCloud(Dataset):
                     obj.vertices, obj.faces, coords
                 )
                 thresh = 0.5
+
+               
+
                 occupancies = np.piecewise(
                     inside_surface_values,
                     [inside_surface_values < thresh, inside_surface_values >= thresh],
@@ -624,18 +654,43 @@ class PointCloud(Dataset):
             self.coords = np.array(self.coords)
             self.occupancies = np.array(self.occupancies)
         elif cfg.strategy == "save_pc":
+            # if(os.path.exists(os.path.join(pc_folder, os.path.basename(path) + ".pts"))):
+            #     print("Point cloud already exists")
+            # else:
             self.coords = point_cloud[:, :3]
             self.normals = point_cloud[:, 3:]
 
             point_cloud_xyz = np.hstack((self.coords, self.normals))
             os.makedirs(pc_folder, exist_ok=True)
-            np.save(os.path.join(pc_folder, os.path.basename(path)), point_cloud_xyz)
+            npy_file = os.path.join(pc_folder, os.path.basename(path) + ".npy")
+            np.save(npy_file, point_cloud)      #_xyz
+
+            #Save the pts format:
+            print(f"file name is {npy_file}")
+            points = np.load(npy_file)
+            print(points[:3])
+
+            pts_points2 = points[points[:, -1] == 1.0]
+            pts_points2 = pts_points2[:, :3]
+
+            #transform from xyzocc to xyz for meshlab
+            pts_points = np.delete(points, 3, axis= 1)# points[points[:, 3] == 1]
+            #pts_points = points[:, 0:3]
+
+            with open(os.path.join(pc_folder, os.path.basename(path) + ".pts"), "w") as f:
+                for point in pts_points:
+                    line = " ".join(map(str, point))
+                    f.write(f"{line}\n")
+
+
         else:
+            print("top!!!!!")
             point_cloud = np.load(
                 os.path.join(pc_folder, os.path.basename(path) + ".npy")
             )
             self.coords = point_cloud[:, :3]
             self.occupancies = point_cloud[:, 3]
+            #self.labels = point_cloud[:, 4]
 
         if cfg.shape_modify == "half":
             included_points = self.coords[:, 0] < 0
@@ -644,10 +699,42 @@ class PointCloud(Dataset):
 
         self.on_surface_points = on_surface_points
 
+    def set_point_cloud_color(self, pts):
+        color = np.zeros((len(pts), 3))
+        for i in range(len(pts)):
+            color[i] = [0, 0, 0] if pts[i, 3] == 0 else [0, 0.5 ,0.5]
+        result = np.hstack((pts, color)) 
+        return result
+
     def __len__(self):
         if self.move:
             return self.coords[0].shape[0] // self.on_surface_points
         return self.coords.shape[0] // self.on_surface_points
+    
+    def repair(self, obj: trimesh.Trimesh):
+        new_obj = obj
+
+        print(f"number of open boundaries: {len(trimesh.repair.broken_faces(obj))}")
+        print(f"volume: {obj.is_volume}")
+        if obj.is_watertight:
+            print(f"the object is watertight")
+
+        else:
+            print(f"the object is not watertight /n starting repair...")
+            obj.fill_holes()
+            new_obj = obj
+            if new_obj.is_watertight:
+                print(f"the obj is now watertight after fixing holes")
+            else:
+                new_obj.fix_normals()
+                new_obj = new_obj
+                if new_obj.is_watertight:
+                    print(f"the obj is now watertight after fixing normals")
+                else:
+                    print("repairing was not succesfull")
+
+        return new_obj
+        
 
     def __getitem__(self, idx):
         time = np.random.randint(0, self.total_time, size=self.total_time)
@@ -682,7 +769,151 @@ class PointCloud(Dataset):
         return {"coords": torch.from_numpy(coords).float()}, {
             "sdf": torch.from_numpy(occs)
         }
+    
+    def __mergepointcloud__(self, pc):
 
+        pass
+
+class PointCloud_semantic(Dataset):
+    def __init__(
+        self,
+        path,
+        on_surface_points,
+        is_mesh=True,
+        output_type="occ",
+        out_act="sigmoid",
+        n_points=20000,
+        cfg=None,
+    ):
+        super().__init__()
+        self.output_type = output_type
+        self.out_act = out_act
+        self.cfg = cfg
+        self.on_surface_points = on_surface_points
+        self.coords = None
+        self.occupancies = None
+
+        if path.endswith(".npy"):
+            print(f"🔹 Loading point cloud from NPY: {path}")
+            data = np.load(path)
+            self.coords = data[:, :3]
+            if data.shape[1] > 3:
+                self.occupancies = data[:, 3].reshape(-1, 1)
+            else:
+                raise ValueError("Expected at least 4 columns in .npy file")
+        else:
+            # Assume PartNet format with 'objs' subfolder
+            obj_dir = os.path.join(path, "objs")
+            if not os.path.exists(obj_dir):
+                raise FileNotFoundError(f"No 'objs' folder found in: {path}")
+
+            print(f"🔹 Merging .obj parts from {obj_dir}")
+            mesh = self.merge_parts(obj_dir)
+            points, occupancies = self.sample_and_label(mesh, n_points)
+            self.coords = points
+            self.occupancies = occupancies.reshape(-1, 1)
+
+    def merge_parts(self, obj_dir):
+        meshes = []
+        for file in sorted(os.listdir(obj_dir)):
+            if file.endswith(".obj"):
+                mesh = trimesh.load(os.path.join(obj_dir, file), force='mesh')
+                if not mesh.is_empty:
+                    meshes.append(mesh)
+        if not meshes:
+            raise RuntimeError(f"No valid .obj files in {obj_dir}")
+        return trimesh.util.concatenate(meshes)
+
+    def sample_and_label(self, mesh, n_points):
+        from trimesh.proximity import signed_distance
+
+        n_points_surface = n_points // 2
+        n_points_uniform = n_points - n_points_surface
+
+        surface = mesh.sample(n_points_surface)
+        surface += 0.01 * np.random.randn(*surface.shape)
+
+        random = np.random.uniform(low=-1, high=1, size=(n_points_uniform, 3))
+        points = np.vstack((surface, random))
+
+        print("🔹 Computing SDF...")
+        sdf = signed_distance(mesh, points)
+
+        if self.output_type == "occ":
+            occ = (sdf >= 0).astype(np.float32)
+            return points, occ
+        elif self.output_type == "sdf":
+            return points, sdf
+        else:
+            raise ValueError(f"Unknown output_type: {self.output_type}")
+
+    def __len__(self):
+        return self.coords.shape[0] // self.on_surface_points
+
+    def __getitem__(self, idx):
+        ixs = np.random.choice(self.coords.shape[0], size=self.on_surface_points, replace=False)
+        coords = self.coords[ixs]
+        occs = self.occupancies[ixs]
+        return {"coords": torch.from_numpy(coords).float()}, {
+            "sdf": torch.from_numpy(occs).float()
+        }
+
+class PointCloud_with_semantic(PointCloud):
+    def __init__(
+        self,
+        path,
+        on_surface_points,
+        is_mesh=True,
+        output_type="occ",
+        out_act="sigmoid",
+        n_points=200000,
+        cfg=None,
+    ):
+        super(PointCloud_with_semantic.__bases__[0], self).__init__()
+        self.output_type = output_type
+        self.out_act = out_act
+        self.cfg = cfg
+        self.on_surface_points = on_surface_points
+        self.coords = None
+        self.occupancies = None
+        self.labels = None
+
+        if path.endswith(".npy"):
+            print(f"🔹 Loading point cloud from NPY: {path}")
+            data = np.load(path)
+
+            
+            self.coords = data[:, :3]
+            if data.shape[1] > 3:
+                self.occupancies = data[:, 3].reshape(-1, 1)
+            else:
+                raise ValueError("Expected at least 4 columns in .npy file")
+            if data.shape[1] > 4:
+                self.labels = data[:, 4].reshape(-1, 1)
+                self.n_of_classes = len(np.unique(self.labels[self.labels >= 0]))
+            else:
+                raise ValueError("The data doesn't include the part label")
+        else:
+            # Assume PartNet format with 'objs' subfolder
+            obj_dir = os.path.join(path, "objs")
+            if not os.path.exists(obj_dir):
+                raise FileNotFoundError(f"No 'objs' folder found in: {path}")
+
+            print(f"🔹 Merging .obj parts from {obj_dir}")
+            mesh = self.merge_parts(obj_dir)
+            points, occupancies = self.sample_and_label(mesh, n_points)
+            self.coords = points
+            self.occupancies = occupancies.reshape(-1, 1)
+
+    def __getitem__(self, idx):
+        ixs = np.random.choice(self.coords.shape[0], size=self.on_surface_points, replace=False)
+        coords = self.coords[ixs]
+        occs = self.occupancies[ixs]
+        labels = self.labels[ixs]
+        n_of_parts = self.n_of_classes
+        return {"coords": torch.from_numpy(coords).float()}, {
+            "sdf": torch.from_numpy(occs).float(),
+                "labels": torch.from_numpy(labels).float()}
 
 class Video(Dataset):
     def __init__(self, path_to_video):

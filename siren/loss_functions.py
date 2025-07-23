@@ -1,7 +1,7 @@
 import diff_operators
 import torch
 import torch.nn.functional as F
-
+import numpy as np
 
 def image_mse(mask, model_output, gt):
     if mask is None:
@@ -291,7 +291,7 @@ def helmholtz_pml(model_output, gt):
     }
 
 
-def occ_sigmoid(model_output, gt, model, cfg=None, first_state_dict=None):
+def occ_sigmoid1(model_output, gt, model, cfg=None, first_state_dict=None):
     gt_sdf = gt["sdf"]
     pred_sdf = model_output["model_out"]
     if cfg.kl_weight > 0 and first_state_dict is not None:
@@ -315,13 +315,107 @@ def occ_sigmoid(model_output, gt, model, cfg=None, first_state_dict=None):
             "kl_weight": cfg.kl_weight * kl_loss,
         }
     else:
+        #Documentation: Weighting of the loss due to an unbalanced distribution of the point cloud
+        pos_weight = torch.tensor(4.0).to(pred_sdf.device)
         loss = F.binary_cross_entropy_with_logits(
-            pred_sdf.squeeze(-1), gt_sdf.squeeze(-1), reduction="none"
+            pred_sdf.squeeze(-1), gt_sdf.squeeze(-1), reduction="none", pos_weight=pos_weight
         )
+
+    
         # loss = F.binary_cross_entropy_with_logits(pred_sdf.squeeze(-1), gt_sdf.squeeze(-1))
         # return {'occupancy': loss}
         return {"occupancy": loss.sum(-1).mean()}
 
+def occ_sigmoid(model_output, gt, model, cfg=None, first_state_dict=None):
+    gt_sdf = gt["sdf"]
+    pred_sdf = model_output["model_out"]
+    
+    #pos_weight = torch.tensor(10.0).to(pred_sdf.device)
+    loss = F.binary_cross_entropy_with_logits(
+        pred_sdf.squeeze(-1), gt_sdf.squeeze(-1), reduction="none"
+    )   
+    
+    if cfg.kl_weight > 0 and first_state_dict is not None:
+        param_arr = [p.flatten() for p in model.parameters()]
+        curr_vec = torch.hstack(param_arr)
+        curr_dist = torch.distributions.Normal(
+            torch.mean(curr_vec), torch.var(curr_vec)
+        )
+
+        param_arr = [first_state_dict[k].flatten() for k in first_state_dict]
+        ref_vec = torch.hstack(param_arr)
+        ref_dist = torch.distributions.Normal(
+            torch.mean(ref_vec), torch.var(ref_vec)
+        )
+
+        kl = torch.distributions.kl_divergence(curr_dist, ref_dist)
+        return {
+            "occupancy": loss,
+            "kl_weight": cfg.kl_weight * kl
+        }
+    
+    return {"occupancy": loss}
+
+def occ_sigmoid_semantic(model_output, gt, model, cfg=None, first_state_dict=None):
+    gt_sdf = gt["sdf"]
+    pred_sdf = model_output["model_out"]
+    pred_label = model_output["part_classification"]
+    gt_label = gt["labels"].squeeze(0)
+
+    semantic_effort = 0.3 # 0.5
+    #pos_weight = torch.tensor(10.0).to(pred_sdf.device)
+    occ_loss = F.binary_cross_entropy_with_logits(
+        pred_sdf.squeeze(-1), gt_sdf.squeeze(-1), reduction="none"
+    )   
+    losses = {}
+    n_parts = cfg.multi_process.n_of_parts
+    
+    # Occupancy loss (shared)
+    occ_loss = F.binary_cross_entropy_with_logits(pred_sdf, gt_sdf)
+    losses['occupancy'] = occ_loss
+
+    # Create one-hot target for part labels: [B, n_parts]
+    
+    gt_one_hot = to_one_hot(gt_label, num_classes=n_parts)
+    # Classification loss: each block learns to predict 1 if point belongs to it, 0 otherwise
+    cls_loss_all = F.binary_cross_entropy_with_logits(pred_label, gt_one_hot, reduction='none')  # [B, n_parts]
+    #print(cls_loss_all.shape)
+    mean_cls_loss = cls_loss_all.mean()
+    losses['semantic_mean'] = mean_cls_loss
+    for part_id in range(n_parts):
+        cls_loss_part = cls_loss_all[:, part_id].mean() 
+        losses[f'block_{part_id}'] = semantic_effort * cls_loss_part + occ_loss  # you can scale this if needed
+
+    losses['total'] = semantic_effort * mean_cls_loss + occ_loss
+    #print(losses.items())
+    return losses
+
+def to_one_hot(indices, num_classes):
+    """
+    Converts a 1D array of class indices to one-hot encoded 2D array.
+
+    Args:
+        indices (np.ndarray): Array of shape (N,) with integer class indices.
+        num_classes (int): Total number of classes.
+
+    Returns:
+        np.ndarray: One-hot encoded array of shape (N, num_classes)
+    """
+
+    #squeeze the input
+    indices = indices.squeeze(axis=-1)
+    indices = np.asarray(indices).astype(int)
+    one_hot = np.zeros((indices.size, num_classes), dtype=np.float32)
+    
+   # print("Max index:", indices.max(), "Num classes:", num_classes)
+
+    # Mask for valid indices (not -1)
+    valid_mask = indices != -1
+    valid_indices = indices[valid_mask]
+
+    # Apply one-hot only to valid positions
+    one_hot[valid_mask, valid_indices] = 1.0
+    return torch.from_numpy(one_hot.astype(float)) 
 
 def occ_tanh(model_output, gt, model):
     gt_sdf = gt["sdf"]
@@ -366,3 +460,6 @@ def sdf(model_output, gt, model, cfg=None):
 
 
 # inter = 3e3 for ReLU-PE
+
+def sdf_and_part_classification(model_output, gt, model , cfg= None):
+    pass

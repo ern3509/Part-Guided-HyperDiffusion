@@ -23,6 +23,7 @@ def create_mesh_v2(
     vis_transform=None,
 ):
     start = time.time()
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     ply_filename = filename
     world_to_mc_grid = torch.eye(4)
     world_to_mc_grid[0, 0] = N / 2
@@ -61,7 +62,7 @@ def create_mesh_v2(
 
     num_samples = N**3
     samples.requires_grad = False
-
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     head = 0
 
     print(
@@ -72,7 +73,7 @@ def create_mesh_v2(
     )
 
     while head < num_samples:
-        sample_subset = samples[head : min(head + max_batch, num_samples), 0:3].cuda()
+        sample_subset = samples[head : min(head + max_batch, num_samples), 0:3].to(device)
 
         samples[head : min(head + max_batch, num_samples), 3] = (
             decoder(sample_subset).squeeze().detach().cpu()  # .squeeze(1)
@@ -88,6 +89,8 @@ def create_mesh_v2(
         torch.mean(sdf_values).item(),
     )
     nz = torch.nonzero(sdf_values < 0)
+    print("SDF min:", sdf_values.min().item(), "max:", sdf_values.max().item(), "mean:", sdf_values.mean().item())
+
     sdf_values = sdf_values.reshape(N, N, N)
 
     end = time.time()
@@ -141,14 +144,16 @@ def create_mesh_v2(
 def create_mesh(
     decoder,
     filename=None,
-    N=256,
+    N=16,  # new: maybe reduce it or increase it (base: 256)
     max_batch=64**3,
     offset=None,
     scale=None,
-    level=0,
+    level=0,    # new: check the range of the values, and maybe change it (0, 0.5 depending on the mean of the values)
     time_val=-1,
 ):
     start = time.time()
+    print("start create mesh")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     ply_filename = filename
     if filename is not None:
         os.makedirs(os.path.dirname(filename), exist_ok=True)
@@ -161,6 +166,7 @@ def create_mesh(
     overall_index = torch.arange(0, N**3, 1, out=torch.LongTensor())
     samples = torch.zeros(N**3, 4)
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # transform first 3 columns
     # to be the x, y, z index
     samples[:, 2] = overall_index % N
@@ -180,13 +186,13 @@ def create_mesh(
     head = 0
 
     while head < num_samples:
-        # print(head)
-        sample_subset = samples[head : min(head + max_batch, num_samples), 0:3].cuda()
+        #print("head")
+        sample_subset = samples[head : min(head + max_batch, num_samples), 0:3].to(device)
         if time_val >= 0:
             sample_subset = torch.hstack(
                 (
                     sample_subset,
-                    torch.ones((sample_subset.shape[0], 1)).cuda() * time_val,
+                    torch.ones((sample_subset.shape[0], 1)).to(device) * time_val,
                 )
             )
         samples[head : min(head + max_batch, num_samples), 3] = (
@@ -195,10 +201,18 @@ def create_mesh(
         head += max_batch
 
     sdf_values = samples[:, 3]
+    sdf_values = torch.clamp(sdf_values, min=-100.0, max=100.0)
+
+    if torch.isnan(sdf_values).any():
+        print("❌ Mesh aborted: NaNs in SDF output")
+        return None, None, sdf_values
+    
+    print("SDF min:", sdf_values.min().item(), "max:", sdf_values.max().item(), "mean:", sdf_values.mean().item())
+
     sdf_values = sdf_values.reshape(N, N, N)
     end = time.time()
     # print("sampling takes: %f" % (end - start))
-
+    print("endcreate mesh")
     return convert_sdf_samples_to_ply(
         sdf_values.data.cpu(),
         voxel_origin,
@@ -235,6 +249,7 @@ def convert_sdf_samples_to_ply(
     start_time = time.time()
 
     numpy_3d_sdf_tensor = pytorch_3d_sdf_tensor.numpy()
+    print("beginconvert")
     # print(numpy_3d_sdf_tensor.min(), numpy_3d_sdf_tensor.max())
     verts, faces, normals, values = (
         np.zeros((0, 3)),
@@ -243,7 +258,8 @@ def convert_sdf_samples_to_ply(
         np.zeros(0),
     )
     try:
-        verts, faces, normals, values = skimage.measure.marching_cubes_lewiner(
+        #Documentation: change marching_cubes_lewiner to marching_cubes since the previous seems to be deprecated
+        verts, faces, normals, values = skimage.measure.marching_cubes(
             numpy_3d_sdf_tensor, level=level, spacing=[voxel_size] * 3
         )
     except Exception as e:
@@ -291,5 +307,5 @@ def convert_sdf_samples_to_ply(
             time.time() - start_time
         )
     )
-
+    print("endconvert")
     return mesh_points, faces, pytorch_3d_sdf_tensor

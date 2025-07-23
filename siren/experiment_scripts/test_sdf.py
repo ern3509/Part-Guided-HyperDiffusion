@@ -20,17 +20,21 @@ from siren import sdf_meshing, utils
 
 class SDFDecoder(torch.nn.Module):
     def __init__(self, model_type, checkpoint_path, mode, cfg):
+        device = "cuda" if torch.cuda.is_available() else "cpu"
         super().__init__()
         # Define the model.
         if model_type == "mlp_3d":
             if "mlp_config" in cfg:
-                self.model = MLP3D(**cfg.mlp_config)
+                self.model = MLP3D(cfg.multi_process.n_of_parts,**cfg.mlp_config)
             else:
                 self.model = MLP3D(**cfg)
 
         if checkpoint_path is not None:
             self.model.load_state_dict(torch.load(checkpoint_path))
-        self.model.cuda()
+
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        self.model.to(device)
 
     def forward(self, coords):
         model_in = {"coords": coords}
