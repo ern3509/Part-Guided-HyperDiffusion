@@ -7,7 +7,7 @@ We thus introduce a part-awarness directly in the generation process.
 ## Method Overview
 
 ![Overview image](/static/overview.svg)
-![The MLP Overfitting process has been modified in order to achieve instance semantic comprehension of the 3D objects](/static/intro image.pdf)
+![The MLP Overfitting process has been modified in order to achieve instance semantic comprehension of the 3D objects](/static/introimage.pdf)
 
 ## Dependencies
 
