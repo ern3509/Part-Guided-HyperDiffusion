@@ -11,7 +11,7 @@ model_type: mlp_3d
 bayesian: False
 logging_root: './logs'
 shape_modify: 'no'
-exp_name: "insert_name_here"
+exp_name: "insert_name_here_full"
 steps_til_summary: 100
 epochs_til_ckpt: 1
 hidden_features: 128
@@ -32,7 +32,7 @@ multi_process:
   n_of_parts: 4
   first_weights_name:
   ignore_first: False
-n_points: 10000
+n_points: 6300
 is_meta: True
 strategy: first_weights
 clip_grad: False
@@ -43,5 +43,5 @@ mlp_config:
   hidden_neurons: [128, 128, 128]
   multires: 4
   move: False
-  semantic: True
+  semantic: False
   

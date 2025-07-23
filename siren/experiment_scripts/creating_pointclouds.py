@@ -8,6 +8,18 @@ from glob import glob
 import igl
 
 
+def merge_parts_of_multiple_objects(obj_dir):
+    for file in os.listdir(obj_dir):
+        print(f"Processing {file}...")
+        obj_file = os.path.join(obj_dir, file)
+        if os.path.isdir(obj_file):
+            objs_path = os.path.join(obj_file, "objs")
+            if os.path.isdir(objs_path):
+                full_obj = merge_parts(objs_path)
+        if full_obj.is_empty:
+            raise RuntimeError(f"Empty mesh found in {obj_file}")
+        full_obj.export(os.path.join(obj_dir, f"{file}.obj"))
+                
 def merge_parts(obj_dir):
     meshes = []
     for file in os.listdir(obj_dir):

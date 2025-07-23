@@ -22,7 +22,7 @@ def calculate_fid_3d(
 ):
     batch_size = 10
     point_net = pointnet2_cls_ssg.get_model(40, normal_channel=False)
-    checkpoint = torch.load(path)
+    checkpoint = torch.load(path, weights_only=False)
     point_net.load_state_dict(checkpoint["model_state_dict"])
     point_net.eval().to(sample_pcs.device)
     count = len(sample_pcs)

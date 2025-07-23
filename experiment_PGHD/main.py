@@ -22,9 +22,9 @@ def main(cfg: DictConfig):
                      # on_surface_points=10000,
                      # cfg=cfg)
 
-    #knife_full = creating_pointclouds.merge_parts("./data/knife1167")
+    knife_full = creating_pointclouds.merge_parts_of_multiple_objects("./knife_4parts")
     #knife_full.export("knife.obj")
 
-    part_label = np.load("./data/knife_preprocessed_split/1167.npy")
+    #part_label = np.load("./data/knife_preprocessed_split/1167.npy")
 if __name__ == "__main__":
     main()

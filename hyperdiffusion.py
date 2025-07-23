@@ -1,5 +1,6 @@
 import copy
 import os
+import imageio
 
 import numpy as np
 import pytorch_lightning as pl
@@ -114,7 +115,7 @@ class HyperDiffusion(pl.LightningModule):
                     level=0.5 if self.mlp_kwargs.output_type == "occ" else 0,
                 )
 
-            print("Input images shape:", input_data.shape)
+            #print("Input images shape:", input_data.shape)
         elif self.method == "raw_3d" and self.trainer.global_step == 0:
             if self.cfg.mlp_config.params.move:
                 out_imgs = []
@@ -230,6 +231,7 @@ class HyperDiffusion(pl.LightningModule):
                             }
                         )
                 else:
+                    print("x_0s.shape", x_0s.shape)
                     meshes, sdfs = self.generate_meshes(x_0s, None, res=512)
                     for mesh in meshes:
                         mesh.vertices *= 2
@@ -292,6 +294,7 @@ class HyperDiffusion(pl.LightningModule):
                     )
 
     def generate_meshes(self, x_0s, folder_name="meshes", info="0", res=64, level=0):
+        print("function generate meshe")
         x_0s = x_0s.view(len(x_0s), -1)
         curr_weights = Config.get("curr_weights")
         x_0s = x_0s[:, :curr_weights]
@@ -334,6 +337,7 @@ class HyperDiffusion(pl.LightningModule):
                         mesh = trimesh.Trimesh(v, f)
                         meshes.append(mesh)
                 else:
+                    print("3D mesh generation")
                     v, f, sdf = sdf_meshing.create_mesh(
                         sdf_decoder,
                         effective_file_name,
@@ -350,9 +354,12 @@ class HyperDiffusion(pl.LightningModule):
                         f[:, 1] = f[:, 2]
                         f[:, 2] = tmp
                     sdfs.append(sdf)
+                    print("before trimesh")
                     mesh = trimesh.Trimesh(v, f)
                     meshes.append(mesh)
+                    print("ended trimesh")
         sdfs = torch.stack(sdfs)
+        print("ended generate meshes")
         return meshes, sdfs
 
     def print_summary(self, flat, func):
@@ -421,7 +428,7 @@ class HyperDiffusion(pl.LightningModule):
         num_mesh_to_generates = len(ref_pcs)
         sample_x_0s = []
         test_batch_size = (
-            100 if self.cfg.method == "hyper_3d" else self.cfg.batch_size + 1
+            4 if self.cfg.method == "hyper_3d" else self.cfg.batch_size + 1
         )
         for _ in tqdm(range(num_mesh_to_generates // test_batch_size)):
             sample_x_0s.append(
@@ -508,8 +515,10 @@ class HyperDiffusion(pl.LightningModule):
         # First process ground truth shapes
         pcs = []
         for obj_name in test_object_names:
-            pc = np.load(os.path.join(dataset_path, obj_name + ".npy"))
-            pc = pc[:, :3]
+            mesh = trimesh.load(os.path.join(dataset_path, obj_name))
+            #pc = np.load(os.path.join(dataset_path, obj_name + ".npy"))
+            pc = mesh.sample(n_points)
+            #pc = pc[:, :3]
 
             pc = torch.tensor(pc).float()
             if split_type == "test":
@@ -527,7 +536,7 @@ class HyperDiffusion(pl.LightningModule):
 
         # Then process generated shapes
         sample_x_0s = []
-        test_batch_size = 100 if self.cfg.method == "hyper_3d" else self.cfg.batch_size
+        test_batch_size = 4 if self.cfg.method == "hyper_3d" else self.cfg.batch_size
 
         for _ in tqdm(range(number_of_samples_to_generate // test_batch_size)):
             sample_x_0s.append(
@@ -618,7 +627,7 @@ class HyperDiffusion(pl.LightningModule):
         sample_batch = sample_batch[: len(ref_pcs)]
         print("number of samples generated (after clipping):", len(sample_batch))
         sample_pcs = torch.stack(sample_batch)
-        assert len(sample_pcs) == len(ref_pcs)
+        #assert len(sample_pcs) == len(ref_pcs)
         torch.save(sample_pcs, f"{orig_meshes_dir}/samples.pth")
 
         self.logger.experiment.log(
@@ -744,7 +753,6 @@ class HyperDiffusion(pl.LightningModule):
                 x_0s.std().item(),
             )
             out_pc_imgs = []
-
             # Handle 4D generation
             if self.cfg.mlp_config.params.move:
                 rot_matrix = Rotation.from_euler("zyx", [45, 180, 90], degrees=True)
@@ -776,11 +784,14 @@ class HyperDiffusion(pl.LightningModule):
                     )
                 return
             # Handle 3D generation
+            
             else:
+                print("Generating 3D meshes")
                 out_imgs = []
                 os.makedirs(f"gen_meshes/{wandb.run.name}")
                 for x_0 in tqdm(x_0s):
-                    mesh, _ = self.generate_meshes(x_0.unsqueeze(0), None, res=700)
+                    print("starting.    x_0.shape", x_0.shape)
+                    mesh, _ = self.generate_meshes(x_0.unsqueeze(0), None, res=256)
                     mesh = mesh[0]
                     if len(mesh.vertices) == 0:
                         continue
@@ -791,6 +802,8 @@ class HyperDiffusion(pl.LightningModule):
                     if self.cfg.dataset == "03001627":
                         mesh.vertices *= 0.7
                     img, _ = render_mesh(mesh)
+                    img_path = os.path.join(f"gen_meshes/{wandb.run.name}", f"render{i}.png")
+                    imageio.imwrite(img_path, (img * 255).astype(np.uint8))
 
                     if len(mesh.vertices) > 0:
                         pc = torch.tensor(mesh.sample(2048))

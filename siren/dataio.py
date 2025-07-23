@@ -483,7 +483,7 @@ class WaveSource(Dataset):
         }
 
 
-class PointCloud1(Dataset):
+class PointCloud(Dataset):
     def __init__(
         self,
         path,
@@ -492,7 +492,7 @@ class PointCloud1(Dataset):
         is_mesh=True,
         output_type="occ",
         out_act="sigmoid",
-        n_points=200000,
+        n_points=20000,
         cfg=None,
     ):
         super().__init__()
@@ -547,7 +547,7 @@ class PointCloud1(Dataset):
                 
                 near_surface = points_surface + 0.01 * np.random.randn(*points_surface.shape)
                 points = np.concatenate([points_surface, points_uniform, near_surface], axis=0)
-                print("test")
+                #print("test")
                 
                 #Documenatation: Determine if a point is inside or outside the mesh surface, change fast winding with classic winding
                 inside_surface_values = igl.winding_number(
@@ -654,7 +654,9 @@ class PointCloud1(Dataset):
             self.coords = np.array(self.coords)
             self.occupancies = np.array(self.occupancies)
         elif cfg.strategy == "save_pc":
-            print("save_pc!!!!!")
+            # if(os.path.exists(os.path.join(pc_folder, os.path.basename(path) + ".pts"))):
+            #     print("Point cloud already exists")
+            # else:
             self.coords = point_cloud[:, :3]
             self.normals = point_cloud[:, 3:]
 
@@ -667,20 +669,9 @@ class PointCloud1(Dataset):
             print(f"file name is {npy_file}")
             points = np.load(npy_file)
             print(points[:3])
-            #points = self.set_point_cloud_color(points)
-
-            with open(os.path.join(pc_folder, os.path.basename(path) + "with_occu.pts"), "w") as f:
-                for point in points:
-                    line = " ".join(map(str, point))
-                    f.write(f"{line}\n")
 
             pts_points2 = points[points[:, -1] == 1.0]
             pts_points2 = pts_points2[:, :3]
-
-            with open(os.path.join(pc_folder, os.path.basename(path) + "erwan.pts"), "w") as f:
-                for point in pts_points2:
-                    line = " ".join(map(str, point))
-                    f.write(f"{line}\n")
 
             #transform from xyzocc to xyz for meshlab
             pts_points = np.delete(points, 3, axis= 1)# points[points[:, 3] == 1]
@@ -699,7 +690,7 @@ class PointCloud1(Dataset):
             )
             self.coords = point_cloud[:, :3]
             self.occupancies = point_cloud[:, 3]
-            self.labels = point_cloud[:, 4]
+            #self.labels = point_cloud[:, 4]
 
         if cfg.shape_modify == "half":
             included_points = self.coords[:, 0] < 0
@@ -783,7 +774,7 @@ class PointCloud1(Dataset):
 
         pass
 
-class PointCloud(Dataset):
+class PointCloud_semantic(Dataset):
     def __init__(
         self,
         path,
@@ -791,7 +782,7 @@ class PointCloud(Dataset):
         is_mesh=True,
         output_type="occ",
         out_act="sigmoid",
-        n_points=200000,
+        n_points=20000,
         cfg=None,
     ):
         super().__init__()
@@ -899,6 +890,7 @@ class PointCloud_with_semantic(PointCloud):
                 raise ValueError("Expected at least 4 columns in .npy file")
             if data.shape[1] > 4:
                 self.labels = data[:, 4].reshape(-1, 1)
+                self.n_of_classes = len(np.unique(self.labels[self.labels >= 0]))
             else:
                 raise ValueError("The data doesn't include the part label")
         else:
@@ -918,6 +910,7 @@ class PointCloud_with_semantic(PointCloud):
         coords = self.coords[ixs]
         occs = self.occupancies[ixs]
         labels = self.labels[ixs]
+        n_of_parts = self.n_of_classes
         return {"coords": torch.from_numpy(coords).float()}, {
             "sdf": torch.from_numpy(occs).float(),
                 "labels": torch.from_numpy(labels).float()}

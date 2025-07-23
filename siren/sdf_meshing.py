@@ -144,7 +144,7 @@ def create_mesh_v2(
 def create_mesh(
     decoder,
     filename=None,
-    N=124,  # new: maybe reduce it or increase it (base: 256)
+    N=16,  # new: maybe reduce it or increase it (base: 256)
     max_batch=64**3,
     offset=None,
     scale=None,
@@ -152,7 +152,7 @@ def create_mesh(
     time_val=-1,
 ):
     start = time.time()
-
+    print("start create mesh")
     device = "cuda" if torch.cuda.is_available() else "cpu"
     ply_filename = filename
     if filename is not None:
@@ -186,7 +186,7 @@ def create_mesh(
     head = 0
 
     while head < num_samples:
-        # print(head)
+        #print("head")
         sample_subset = samples[head : min(head + max_batch, num_samples), 0:3].to(device)
         if time_val >= 0:
             sample_subset = torch.hstack(
@@ -212,7 +212,7 @@ def create_mesh(
     sdf_values = sdf_values.reshape(N, N, N)
     end = time.time()
     # print("sampling takes: %f" % (end - start))
-
+    print("endcreate mesh")
     return convert_sdf_samples_to_ply(
         sdf_values.data.cpu(),
         voxel_origin,
@@ -249,6 +249,7 @@ def convert_sdf_samples_to_ply(
     start_time = time.time()
 
     numpy_3d_sdf_tensor = pytorch_3d_sdf_tensor.numpy()
+    print("beginconvert")
     # print(numpy_3d_sdf_tensor.min(), numpy_3d_sdf_tensor.max())
     verts, faces, normals, values = (
         np.zeros((0, 3)),
@@ -306,5 +307,5 @@ def convert_sdf_samples_to_ply(
             time.time() - start_time
         )
     )
-
+    print("endconvert")
     return mesh_points, faces, pytorch_3d_sdf_tensor

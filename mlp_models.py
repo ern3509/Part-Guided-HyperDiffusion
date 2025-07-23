@@ -53,7 +53,7 @@ class MLP(nn.Module):
         return x, None
 
 
-class MLP3D1(nn.Module):
+class MLP3D_nope(nn.Module):
     def __init__(
         self,
         n_of_parts,
@@ -204,7 +204,7 @@ class ClassMaskCreator:
         return self.class_masks[class_id]
 
 
-class MLP3D(nn.Module):
+class MLP3D_final(nn.Module):
     def __init__(
         self,
         n_of_parts,
@@ -273,11 +273,12 @@ class MLP3D(nn.Module):
         masks = ClassMaskCreator(self, n_classes=self.n_of_parts)
 
         x = self.layers[0](x)
+        x_occ = x  # Occupancy output will be based on this first layer
         part_outputs = []
         temporal_part_output = []
         for i, layer_part in enumerate(self.layers[1:]):
             # Process each part's neurons independently
-            x_occ = layer_part(x)  # Process through part-specific weights
+            x_occ = layer_part(x_occ)  # Process through part-specific weights
             x_occ = F.leaky_relu(x_occ) if self.use_leaky_relu else F.relu(x_occ)
             for part_id in range(self.n_of_parts): 
                 x_part = temporal_part_output[i * part_id] if i > 0 else x #part_outputs[part_id] if i > 0 else x
@@ -449,3 +450,58 @@ class MLP3D_simple_partguided(nn.Module):
             "model_out": occ_output,
             "part_classification": torch.cat(class_outputs, dim=-1).squeeze()
         }
+
+class MLP3D(nn.Module):
+    def __init__(
+        self,
+        n_of_parts,  # 4 input layers
+        out_size,
+        hidden_neurons,
+        use_leaky_relu=False,
+        use_bias=True,
+        multires=10,
+        output_type=None,
+        move=False,
+        **kwargs,
+    ):
+        super().__init__()
+        self.embedder = Embedder(
+            include_input=True,
+            input_dims=3 if not move else 4,
+            max_freq_log2=multires - 1,
+            num_freqs=multires,
+            log_sampling=True,
+            periodic_fns=[torch.sin, torch.cos],
+        )
+        self.layers = nn.ModuleList([])
+        self.output_type = output_type
+        self.use_leaky_relu = use_leaky_relu
+        in_size = self.embedder.out_dim
+        self.layers.append(nn.Linear(in_size, hidden_neurons[0], bias=use_bias))
+        for i, _ in enumerate(hidden_neurons[:-1]):
+            self.layers.append(
+                nn.Linear(hidden_neurons[i], hidden_neurons[i + 1], bias=use_bias)
+            )
+        self.layers.append(nn.Linear(hidden_neurons[-1], out_size, bias=use_bias))
+
+    def forward(self, model_input):
+        coords_org = model_input["coords"].clone().detach().requires_grad_(True)
+        x = coords_org
+        x = self.embedder.embed(x)
+        for i, layer in enumerate(self.layers[:-1]):
+            x = layer(x)
+            x = F.leaky_relu(x) if self.use_leaky_relu else F.relu(x)
+        x = self.layers[-1](x)
+
+        if self.output_type == "occ":
+            # x = torch.sigmoid(x)
+            pass
+        elif self.output_type == "sdf":
+            x = torch.tanh(x)
+        elif self.output_type == "logits":
+            x = x
+        else:
+            raise f"This self.output_type ({self.output_type}) not implemented"
+        x = dist.Bernoulli(logits=x).logits
+
+        return {"model_in": coords_org, "model_out": x}

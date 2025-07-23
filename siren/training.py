@@ -13,7 +13,7 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm.autonotebook import tqdm
 
 
-def train1(
+def train(
     model,
     train_dataloader,
     epochs,
@@ -243,7 +243,7 @@ def train1(
         # np.savetxt(os.path.join(checkpoints_dir, 'train_losses_final.txt'),
         #            np.array(train_losses))
 
-def train( #1_mask_model
+def train2( #1_mask_model
     model,
     train_dataloader,
     epochs,
@@ -386,9 +386,9 @@ def train( #1_mask_model
                     for part_id in range(cfg.multi_process.n_of_parts):
                         part_loss = losses[f"block_{part_id}"]
                         optim.zero_grad()
-                        part_loss.backward(retain_graph=True) # retain_graph to allow reuse
-                        train_loss += part_loss.item()
-                        #train_loss.backward()
+                        #part_loss.backward(retain_graph=True) # retain_graph to allow reuse
+                        train_loss += part_loss
+                    train_loss.backward()
                     total_loss += train_loss
                     wandb.log({"train_loss": train_loss})
                     if clip_grad:
