@@ -1,21 +1,15 @@
 # Part-Guided-HyperDiffusion
 
-This is an implementation repository based on the paper HyperDiffusion.
-The following information are the same you can find on the official Gitrepo of the paper. Stay tuned for more specifical information about our implementation.
-
-[Paper](https://arxiv.org/abs/2303.17015) | [Project website](https://www.ziyaerkoc.com/hyperdiffusion) |  [Video](https://www.youtube.com/watch?v=wjFpsKdo-II) | [Data](https://drive.google.com/drive/folders/1CuNVa92jcKlGBiHEuCQK2-juAB6Q6QPx?usp=sharing)
+Our work adresses the lack of semantic understanding of the 3D Object diffusion based generation models, in paarticular our baseline: Hyperdiffusion.
+We thus introduce a part-awarness directly in the generation process.
 
 
-## News
-I'll release rest of the weights/checkpoints after post-refactor tests are complete. You can see here for what's uploaded.  
-- [06.09.2023] Code and airplane weights/checkpoints released
 ## Method Overview
 
 ![Overview image](/static/overview.svg)
 
 ## Dependencies
 
-* Tested on Ubuntu 20.04
 * Python 3.7
 * PyTorch 1.13.0
 * CUDA 11.7
