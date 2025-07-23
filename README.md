@@ -1,3 +1,4 @@
+
 # Part-Guided-HyperDiffusion
 
 Our work adresses the lack of semantic understanding of the 3D Object diffusion based generation models, in paarticular our baseline: Hyperdiffusion.
@@ -22,6 +23,8 @@ For full list please see [hyperdiffusion_env.yaml file](/hyperdiffusion_env.yaml
 ## Data
 We impleted our model on the partNet Dataset. Please request access right to the dataset ad extract the meshes you'll want to overfitt your model with.
 If you want to train the diffusion model, you can find some checkpoints here https://github.com/ern3509/Part-Guided-HyperDiffusion/tree/85a5bc1bf3068467f17eb0e5c6e6fbecfd6a9089/logs/insert_name_here.
+Our model has been trained on knives but can also be trained for other object of the ShapeNet core.
+
 
 ## Get Started
 You can run the google colab cells we created in the notebook Hyperdiffusion.ipynb
@@ -57,7 +60,6 @@ python siren/experiment_scripts/train_sdf.py --config-name=overfit_knife
 - **data**: Downloaded point cloud files including train-val-test splits go here (see [Get Started](#get-started)) 
 - **diffusion**: Contains all the diffusion logic. Borrowed from [OpenAI](https://github.com/openai/guided-diffusion) .
 - **ldm**: Latent diffusion codebase for Voxel baseline. Borrowed from [official LDM repo](https://github.com/CompVis/latent-diffusion).
-- **mlp_weights**: Includes overfitted MLP weights should be downloaded to here (see [Get Started](#get-started)).
 - **siren**: Modified [SIREN](https://github.com/vsitzmann/siren) codebase. Includes shape overfitting logic.
 - **static**: Images for README file.
 - **Pointnet_Pointnet2_pytorch**: Includes Pointnet2 definition and weights for 3D FID calculation.
@@ -78,6 +80,7 @@ python siren/experiment_scripts/train_sdf.py --config-name=overfit_knife
 - **evaluation_metrics_3d.py**: Methods to calculate MMD, COV and 1-NN from [DPC](https://github.com/luost26/diffusion-point-cloud). Both for 3D and 4D.
 
 **Entry Point**
+- **hyyperdiffusion.ipynb**: General Entry point. It is a colab notebook in case you don't have a GPU enough big to train the diffusion model
 - **hyperdiffusion_env.yaml**: Conda environment file (see [Get Started](#get-started) section).
 - **main.py**: Entry point of our codebase.
 
@@ -89,25 +92,9 @@ python siren/experiment_scripts/train_sdf.py --config-name=overfit_knife
 - **embedder.py**: Positional encoding definition.
 - **hyperdiffusion.py**: Definition of our method, it includes training, testing and validation logics in the form of a Pytorch Lightning module.
 
-## Training Plots
-
-We share training plots for better reproducibility. Links take you to Weights & Biases reports. (_Note: Some links sometimes don't work for unknown reasons_)
-
-[Plane](https://api.wandb.ai/links/ziyaer/9korb518) | [Car](https://api.wandb.ai/links/ziyaer2/s528ygbt) | [Chair](https://api.wandb.ai/links/ziyaer2/y9pbdzwh) | [4D Animals](https://api.wandb.ai/links/ziyaer2/2xzc3fcn)
 
 ## Acknowledgments
 
-We mainly used codebases of [SIREN](https://github.com/vsitzmann/siren) and [G.pt](https://github.com/wpeebles/G.pt) papers to build our repository. We also referred to [DPC](https://github.com/luost26/diffusion-point-cloud) for codes like evaluation metrics. We used [OpenAI Guided Diffusion](https://github.com/openai/guided-diffusion) as our diffusion backbone. [LDM](https://github.com/CompVis/latent-diffusion) codebase was useful for us to implement our voxel baseline.
+We mainly use the Hyperdiffusion code. [Hyperdiffusion](https://github.com/Rgtemze/HyperDiffusion)
+The ground codebases are [SIREN](https://github.com/vsitzmann/siren) and [G.pt](https://github.com/wpeebles/G.pt) papers to build our repository. We also referred to [DPC](https://github.com/luost26/diffusion-point-cloud) for codes like evaluation metrics. We used [OpenAI Guided Diffusion](https://github.com/openai/guided-diffusion) as our diffusion backbone. [LDM](https://github.com/CompVis/latent-diffusion) codebase was useful for us to implement our voxel baseline.
 
-## Citation
-If you find our work useful, please cite using the following BibTex entry:
-```
-@misc{erkoç2023hyperdiffusion,
-  title={HyperDiffusion: Generating Implicit Neural Fields with Weight-Space Diffusion}, 
-  author={Ziya Erkoç and Fangchang Ma and Qi Shan and Matthias Nießner and Angela Dai},
-  year={2023},
-  eprint={2303.17015},
-  archivePrefix={arXiv},
-  primaryClass={cs.CV}
-}
-```
