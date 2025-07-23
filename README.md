@@ -20,85 +20,35 @@ We thus introduce a part-awarness directly in the generation process.
 For full list please see [hyperdiffusion_env.yaml file](/hyperdiffusion_env.yaml)
 
 ## Data
-All the data needed to train and evaluate HyperDiffusion is in [this Drive folder](https://drive.google.com/drive/folders/1CuNVa92jcKlGBiHEuCQK2-juAB6Q6QPx?usp=sharing).
-There are three main folders there:
-- **Checkpoints** contains trained diffusion model for each category, you'll need them for [evaluation](#evaluation)
-- **MLP Weights** involves already overfitted MLP weights.
-- **Point Clouds (2048)** has the set of 2048 points sampled from meshes to be used for metric calculation and baseline training.  
+We impleted our model on the partNet Dataset. Please request access right to the dataset ad extract the meshes you'll want to overfitt your model with.
+If you want to train the diffusion model, you can find some checkpoints here https://github.com/ern3509/Part-Guided-HyperDiffusion/tree/85a5bc1bf3068467f17eb0e5c6e6fbecfd6a9089/logs/insert_name_here.
 
 ## Get Started
-We have a .yaml file that you can create a conda environment from. Simply run,
+You can run the google colab cells we created in the notebook Hyperdiffusion.ipynb
+This code is simple and is also a goog introduction to the topic. That should be your entry points along our report.
 
+to start evaluating,
 ```commandline
-conda env create --file hyperdiffusion_env.yaml
-conda activate hyper-diffusion
-```
-
-_We specify our runtime parameters using .yaml files which are inside configs folder. There are different yaml files for each category and task._
-
-Then, download **MLP Weights** from [our Drive](https://drive.google.com/drive/folders/1CuNVa92jcKlGBiHEuCQK2-juAB6Q6QPx?usp=sharing) and put it into **mlp_weights** folder. Config files assume that weights are in that folder.
-
-For 3D, download **Point Clouds (2048)** folder from [Drive](https://drive.google.com/drive/folders/1CuNVa92jcKlGBiHEuCQK2-juAB6Q6QPx?usp=sharing) and save its content to **data** folder. Eventually, **data** folder should look like this:
-```
-data
-|-- 02691156
-|-- 02691156_2048_pc
-|-- 02958343
-|-- 02958343_2048_pc
-|-- 03001627
-|-- 03001627_2048_pc
-|-- animals
-```
-_Note: Category id to name conversion is as follows: 02691156 -> airplane, 02958343 -> car, 03001627 -> chair_
-### Evaluation
-Download **Checkpoints** folder from [Drive](https://drive.google.com/drive/folders/1CuNVa92jcKlGBiHEuCQK2-juAB6Q6QPx?usp=sharing). Assign the path of that checkpoint to the `best_model_save_path` parameter.
-
-to start evaluating, airplane category:
-```commandline
-python main.py --config-name=train_plane mode=test best_model_save_path=<path/to/checkpoint>
-```
-(_checkpoints coming soon!_) car category:
-```commandline
-python main.py --config-name=train_car mode=test best_model_save_path=<path/to/checkpoint>
-```
-(_checkpoints coming soon!_) chair category (we have special operations for chair, see our Supplementary Material for details):
-```commandline
-python main.py --config-name=train_chair mode=test best_model_save_path=<path/to/checkpoint> test_sample_mult=2 dedup=True
-```
-(_checkpoints coming soon_) 4D animals category:
-```commandline
-python main.py --config-name=train_4d_animals mode=test best_model_save_path=<path/to/checkpoint>
+python main.py --config-name=train_knife mode=test best_model_save_path=<path/to/checkpoint>
 ```
 ### Training
-To start training, airplane category:
+To start training,
 ```commandline
-python main.py --config-name=train_plane
-```
-(_MLP weights coming soon_) car category:
-```commandline
-python main.py --config-name=train_car
-```
-(_MLP weights coming soon_) chair category:
-```commandline
-python main.py --config-name=train_chair
-```
-(_MLP weights coming soon_) 4D animals category:
-```commandline
-python main.py --config-name=train_4d_animals
+python main.py --config-name=train_knife
 ```
 
 We are using [hydra](https://hydra.cc/), you can either specify parameters from corresponding yaml file or directly modify
 them from terminal. For instance, to change the number of epochs:
 
 ```commandline
-python main.py --config-name=train_plane epochs=1
+python main.py --config-name=train_plane epochs=100 
 ```
 ### Overfitting
-We already provide overfitted shapes but if you want to do it yourself make sure that you put downloaded [ShapeNet](https://shapenet.org/) shapes (we applied [ManifoldPlus](https://github.com/hjwdzh/ManifoldPlus) pre-processing) into **data** folder.
+We already provide overfitted shapes but if you want to do it yourself make sure that you put downloaded [PartNet]([https://shapenet.org/](https://huggingface.co/datasets/ShapeNet/PartNet-archive)) shapes (we applied [ManifoldPlus](https://github.com/hjwdzh/ManifoldPlus) pre-processing) into **data** folder.
 After that, we first create point clouds and then start overfitting on those point clouds; following lines do exactly that:
 ```commandline
-python siren/experiment_scripts/train_sdf.py --config-name=overfit_plane strategy=save_pc
-python siren/experiment_scripts/train_sdf.py --config-name=overfit_plane
+python siren/experiment_scripts/train_sdf.py --config-name=overfit_knife strategy=save_pc
+python siren/experiment_scripts/train_sdf.py --config-name=overfit_knife
 ```
 
 ## Code Map
